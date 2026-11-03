@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>蓝色肥鱼 · 动作工作台</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<main class="workspace">
+  <header><a class="brand" href="./"><span class="brandmark">≈</span> BLUEFISH <span class="edition">LAYERED CHARACTER / 02</span></a><span class="status"><i></i><span id="status">正在准备角色</span></span></header>
+  <section class="intro"><span class="eyebrow">一张原画，开始有了呼吸</span><h1>你好，大肥鱼。</h1><p>移动鼠标，看看她的反应。</p></section>
+  <section class="studio">
+    <div class="preview" id="preview"><span class="stage-caption">ORIGINAL ART · LIVING MOTION</span><div class="halo"></div><canvas id="avatar" aria-label="蓝发肥鱼动态角色"></canvas><div class="preview-footer"><span>视线 · 眨眼 · 头部转动</span><button id="background" class="text-button">切换深色背景 ↗</button></div></div>
+    <aside>
+      <div class="panel-heading"><span class="eyebrow">动作控制</span><span class="small-tag">LOCAL</span></div>
+      <div class="switch-row"><label for="follow">跟随鼠标</label><input type="checkbox" id="follow" checked></div>
+      <div class="switch-row"><label for="idle">自然待机与眨眼</label><input type="checkbox" id="idle" checked></div>
+      <div class="switch-row"><label for="reduced">减少动态</label><input type="checkbox" id="reduced"></div>
+      <div class="divider"></div>
+      <div class="range-heading"><label for="yaw">左右转头</label><output id="yawValue">0°</output></div><input id="yaw" type="range" min="-18" max="18" step="0.1" value="0">
+      <div class="range-heading"><label for="pitch">抬头 / 低头</label><output id="pitchValue">0°</output></div><input id="pitch" type="range" min="-12" max="12" step="0.1" value="0">
+      <div class="range-heading"><label for="roll">歪头</label><output id="rollValue">0°</output></div><input id="roll" type="range" min="-10" max="10" step="0.1" value="0">
+      <div class="actions"><button data-action="blink">眨眨眼</button><button data-action="nod">点点头</button><button data-action="shakehead">摇摇头</button><button data-action="happy">开心一下</button><button data-action="wink">单眼眨眼</button><button id="showMaster">对照完整母版</button></div>
+      <button id="reset" class="reset">恢复自然姿态 ↺</button>
+      <details><summary>分件与绑定检查</summary><p>19 张 2048×2048 透明 PNG；身体和嘴为空层。切换下拉项单独查看各层。</p><select id="soloLayer" aria-label="单独查看图层"><option value="">显示完整绑定角色</option></select></details>
+      <details><summary>PromptSoul 动作适配</summary><p>载入已解析的 segment JSON，或本项目的临时参数曲线。仅支持当前角色已有参数。</p><label class="file-button">载入动作 JSON<input id="cueFile" type="file" accept=".json,application/json"></label><button id="demoCue" class="text-button">播放适配示例 ↗</button><p id="cueStatus" role="status">未连接外部服务</p></details>
+    </aside>
+  </section>
+  <footer><p>完整头部 · 独立分件 · 分层网格绑定。保留母版的无嘴表情，可查看并导出各层。</p><span>桌面悬浮：双击「启动桌面肥鱼.cmd」</span></footer>
+</main>
+<p id="error" role="alert" hidden></p><script type="module" src="src/app.mjs"></script>
+</body></html>

@@ -1,0 +1,435 @@
+{
+  "version": 2,
+  "format": "bluefish-layer-mesh-2d",
+  "size": [
+    2048,
+    2048
+  ],
+  "master": "assets/master.png",
+  "sourceSize": [
+    1254,
+    1254
+  ],
+  "sourceSha256": "981c17edd6c039d9aeb20f85b92e68536147453c65148fc98add180cfde62345",
+  "limits": {
+    "yaw": 18,
+    "pitch": 12,
+    "roll": 10
+  },
+  "drawOrder": [
+    "hair_back",
+    "ear_l",
+    "ear_r",
+    "face",
+    "eye_l_open",
+    "eye_r_open",
+    "blush_l",
+    "blush_r",
+    "hair_front",
+    "headdress",
+    "bow_l",
+    "bow_r",
+    "ahoge"
+  ],
+  "layers": [
+    {
+      "name": "body",
+      "file": "assets/layers/body.png",
+      "box": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "pivot": [
+        1024.0,
+        1024.0
+      ],
+      "depth": 0,
+      "empty": true,
+      "eyeSide": null,
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "hair_back",
+      "file": "assets/layers/hair_back.png",
+      "box": [
+        122,
+        330,
+        1841,
+        1955
+      ],
+      "pivot": [
+        1012.568,
+        1110.558
+      ],
+      "depth": 0.05,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "face",
+      "file": "assets/layers/face.png",
+      "box": [
+        409,
+        710,
+        1467,
+        1851
+      ],
+      "pivot": [
+        963.573,
+        1306.539
+      ],
+      "depth": 0.09,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "ear_l",
+      "file": "assets/layers/ear_l.png",
+      "box": [
+        315,
+        336,
+        742,
+        763
+      ],
+      "pivot": [
+        610.807,
+        630.405
+      ],
+      "depth": 0.095,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 12
+    },
+    {
+      "name": "ear_r",
+      "file": "assets/layers/ear_r.png",
+      "box": [
+        1554,
+        734,
+        1942,
+        1149
+      ],
+      "pivot": [
+        1629.907,
+        1022.367
+      ],
+      "depth": 0.095,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 12
+    },
+    {
+      "name": "eye_l_open",
+      "file": "assets/layers/eye_l_open.png",
+      "box": [
+        614,
+        1062,
+        797,
+        1408
+      ],
+      "pivot": [
+        704.986,
+        1231.409
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "l",
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "eye_l_half",
+      "file": "assets/layers/eye_l_half.png",
+      "box": [
+        614,
+        1062,
+        797,
+        1408
+      ],
+      "pivot": [
+        704.986,
+        1231.409
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "l",
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "eye_l_closed",
+      "file": "assets/layers/eye_l_closed.png",
+      "box": [
+        614,
+        1062,
+        797,
+        1408
+      ],
+      "pivot": [
+        704.986,
+        1231.409
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "l",
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "eye_r_open",
+      "file": "assets/layers/eye_r_open.png",
+      "box": [
+        1111,
+        1225,
+        1295,
+        1569
+      ],
+      "pivot": [
+        1201.898,
+        1397.58
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "r",
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "eye_r_half",
+      "file": "assets/layers/eye_r_half.png",
+      "box": [
+        1111,
+        1225,
+        1295,
+        1569
+      ],
+      "pivot": [
+        1201.898,
+        1397.58
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "r",
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "eye_r_closed",
+      "file": "assets/layers/eye_r_closed.png",
+      "box": [
+        1111,
+        1225,
+        1295,
+        1569
+      ],
+      "pivot": [
+        1201.898,
+        1397.58
+      ],
+      "depth": 0.092,
+      "empty": false,
+      "eyeSide": "r",
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "blush_l",
+      "file": "assets/layers/blush_l.png",
+      "box": [
+        432,
+        1350,
+        662,
+        1487
+      ],
+      "pivot": [
+        550.38,
+        1417.595
+      ],
+      "depth": 0.091,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "blush_r",
+      "file": "assets/layers/blush_r.png",
+      "box": [
+        1118,
+        1562,
+        1343,
+        1693
+      ],
+      "pivot": [
+        1229.78,
+        1631.541
+      ],
+      "depth": 0.091,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "mouth",
+      "file": "assets/layers/mouth.png",
+      "box": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "pivot": [
+        1024.0,
+        1024.0
+      ],
+      "depth": 0,
+      "empty": true,
+      "eyeSide": null,
+      "visibleAtRest": false,
+      "overlapPx": 0
+    },
+    {
+      "name": "hair_front",
+      "file": "assets/layers/hair_front.png",
+      "box": [
+        355,
+        520,
+        1550,
+        1852
+      ],
+      "pivot": [
+        992.97,
+        718.596
+      ],
+      "depth": 0.1,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 12
+    },
+    {
+      "name": "ahoge",
+      "file": "assets/layers/ahoge.png",
+      "box": [
+        1095,
+        106,
+        1596,
+        513
+      ],
+      "pivot": [
+        1143.222,
+        503.018
+      ],
+      "depth": 0.1,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "headdress",
+      "file": "assets/layers/headdress.png",
+      "box": [
+        654,
+        300,
+        1614,
+        940
+      ],
+      "pivot": [
+        1038.699,
+        605.907
+      ],
+      "depth": 0.1,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 12
+    },
+    {
+      "name": "bow_l",
+      "file": "assets/layers/bow_l.png",
+      "box": [
+        380,
+        563,
+        737,
+        889
+      ],
+      "pivot": [
+        565.078,
+        671.234
+      ],
+      "depth": 0.1,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    },
+    {
+      "name": "bow_r",
+      "file": "assets/layers/bow_r.png",
+      "box": [
+        1437,
+        896,
+        1760,
+        1314
+      ],
+      "pivot": [
+        1593.978,
+        1055.03
+      ],
+      "depth": 0.1,
+      "empty": false,
+      "eyeSide": null,
+      "visibleAtRest": true,
+      "overlapPx": 0
+    }
+  ],
+  "eyes": [
+    {
+      "side": "l",
+      "center": [
+        704.986,
+        1231.409
+      ],
+      "box": [
+        614,
+        1062,
+        797,
+        1408
+      ],
+      "tilt": 0.26
+    },
+    {
+      "side": "r",
+      "center": [
+        1201.898,
+        1397.58
+      ],
+      "box": [
+        1111,
+        1225,
+        1295,
+        1569
+      ],
+      "tilt": 0.26
+    }
+  ],
+  "completion": {
+    "face": "Original visible skin; local interpolation under eyes/blush; inferred skin backing under bangs.",
+    "hair_back": "Original visible pixels plus inferred occluded blue backing.",
+    "body": "Empty: complete head portrait has no body.",
+    "mouth": "Empty: approved expression has no drawn mouth.",
+    "overlap": "12px at occluded attachment edges where geometrically possible; never outward over the silhouette.",
+    "nativeResolution": "1254 source resampled with Lanczos onto 2048 fixed grid; not native 2048 generation."
+  }
+}

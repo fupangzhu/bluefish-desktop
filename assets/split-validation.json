@@ -1,0 +1,23 @@
+{
+  "pngCount": 19,
+  "size": [
+    2048,
+    2048
+  ],
+  "empty": [
+    "body",
+    "mouth"
+  ],
+  "meanAbsRgbaError": 0.12402224540710449,
+  "pixelsRgbaErrorOver8": 28439,
+  "completionCountsNative": {
+    "hair_front": 12189,
+    "ear_l": 6616,
+    "ear_r": 4507,
+    "headdress": 2592,
+    "bow_l": 0,
+    "bow_r": 0,
+    "ahoge": 0
+  },
+  "canvasEdgeAlphaMax": 0
+}

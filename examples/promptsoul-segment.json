@@ -1,0 +1,14 @@
+{
+  "turnId": "bluefish-local-example",
+  "modelEpoch": 0,
+  "seq": 0,
+  "cues": [{
+    "id": "gentle-nod",
+    "at": 0,
+    "span": 1,
+    "curves": [
+      {"parameter": "ParamAngleY", "minimum": -9, "maximum": 9, "keys": [[0, 0], [0.2, -6], [0.4, 5], [0.6, -4], [0.8, 2], [1, 0]]},
+      {"parameter": "ParamAngleZ", "minimum": -7, "maximum": 7, "keys": [[0, 0], [0.5, 4], [1, 0]]}
+    ]
+  }]
+}
