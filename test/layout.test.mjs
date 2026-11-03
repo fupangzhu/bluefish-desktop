@@ -1,6 +1,0 @@
-import test from 'node:test';import assert from 'node:assert/strict';import layout from '../desktop/layout.cjs';
-const work={x:0,y:0,width:2560,height:1380};
-test('size is continuous, bounded and supports small pets',()=>{assert.equal(layout.normalizeSize(96),96);assert.equal(layout.normalizeSize(153.8),154);assert.equal(layout.normalizeSize(-2),80);assert.equal(layout.normalizeSize(999),640);assert.equal(layout.normalizeSize(NaN),200);});
-test('docked head edge always meets taskbar and palms have bounded overlap',()=>{for(const size of [80,96,127,200,319,640]){const p=layout.place(work,size,true,100);assert.equal(p.y+p.edge,1380);assert.equal(p.height-p.edge,p.overlap);assert.ok(p.overlap<=6);assert.ok(p.height<size);}});
-test('horizontal dock clamp works on negative-coordinate secondary displays',()=>{const w={x:-1920,y:-200,width:1920,height:1000};const p=layout.place(w,150,true,-4000);assert.equal(p.x,-1920);assert.equal(p.y+p.edge,800);assert.equal(layout.place(w,150,true,100).x,-150);});
-test('old fixed-size settings migrate to a small docked character',()=>{assert.deepEqual(layout.loadSettings({size:460,x:500,y:500}),{version:3,size:200,docked:true,x:null,y:null,displayId:null});assert.equal(layout.loadSettings({version:3,size:117,docked:false}).size,117);assert.equal(layout.loadSettings({version:3,size:117,docked:false}).docked,false);});

@@ -22,6 +22,6 @@ with ZipFile(output, 'w', ZIP_DEFLATED, compresslevel=6) as package:
             package.write(file, 'bluefish-desktop/' + file.relative_to(root).as_posix())
 with ZipFile(output) as package:
     assert package.testzip() is None
-    for name in ['assets/hand.svg', 'desktop/layout.cjs', 'docs/editor.md']:
+    for name in ['overlay.html', 'menu.html', 'desktop/dock.cjs', 'src/peek.mjs', 'src/hands.mjs']:
         assert 'bluefish-desktop/' + name in package.namelist()
 print(output.name, output.stat().st_size, 'bytes')

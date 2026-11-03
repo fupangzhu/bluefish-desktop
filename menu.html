@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>菜单</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="menu.css"></head>
+<body>
+<div class="card menu" role="menu" aria-label="蓝色肥鱼菜单">
+  <div class="row size">
+    <span class="ico" data-icon="size" title="大小" aria-hidden="true"></span>
+    <input id="size" class="range" type="range" min="150" max="460" step="1" value="240" aria-label="大小">
+    <output id="sizeValue" class="num">240</output>
+  </div>
+  <div class="row grid">
+    <button class="icon-btn" data-action="blink" title="眨眼" aria-label="眨眼"><span data-icon="blink"></span></button>
+    <button class="icon-btn" data-action="wink" title="单眼眨眼" aria-label="单眼眨眼"><span data-icon="wink"></span></button>
+    <button class="icon-btn" data-action="nod" title="点头" aria-label="点头"><span data-icon="nod"></span></button>
+    <button class="icon-btn" data-action="shakehead" title="摇头" aria-label="摇头"><span data-icon="shake"></span></button>
+    <button class="icon-btn" data-action="happy" title="开心" aria-label="开心"><span data-icon="happy"></span></button>
+  </div>
+  <div class="row grid">
+    <button class="icon-btn" id="follow" aria-pressed="true" title="跟随鼠标" aria-label="跟随鼠标"><span data-icon="follow"></span></button>
+    <button class="icon-btn" id="idle" aria-pressed="true" title="自然待机" aria-label="自然待机"><span data-icon="idle"></span></button>
+    <button class="icon-btn" id="docked" aria-pressed="true" title="趴在状态栏" aria-label="趴在状态栏"><span data-icon="dock"></span></button>
+  </div>
+  <hr>
+  <div class="row grid">
+    <button class="icon-btn" data-command="reset-position" title="回到原位" aria-label="回到原位"><span data-icon="home"></span></button>
+    <button class="icon-btn" data-command="open-console" title="控制台" aria-label="控制台"><span data-icon="console"></span></button>
+    <button class="icon-btn" data-command="toggle-visible" title="隐藏" aria-label="隐藏"><span data-icon="hide"></span></button>
+    <button class="icon-btn danger last" data-command="quit" title="退出" aria-label="退出"><span data-icon="quit"></span></button>
+  </div>
+</div>
+<script type="module" src="src/menu.mjs"></script>
+</body></html>

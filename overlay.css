@@ -1,0 +1,9 @@
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;-webkit-user-select:none;user-select:none;-webkit-user-drag:none}
+canvas{display:block;touch-action:none}
+.head-clip{position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden;z-index:1}
+#avatar{position:absolute;left:0;top:0;will-change:transform}
+#hands{position:absolute;left:0;top:0;width:100%;height:100%;z-index:3}
+#error{position:fixed;left:8px;right:8px;bottom:8px;margin:0;padding:6px 8px;border-radius:7px;background:#fff;color:#c72f3b;font:12px 'Segoe UI','Microsoft YaHei UI',sans-serif;z-index:9}
+/* Plain-browser preview only: a pretend taskbar under the ledge so the layout can be judged. */
+html.preview body{background:linear-gradient(#cfe0ee,#f3f7fb)}
+html.preview #taskbar{position:absolute;left:0;right:0;bottom:0;z-index:2;background:#e9edf2;border-top:1px solid #aab4c2}

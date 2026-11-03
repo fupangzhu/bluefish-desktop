@@ -1,0 +1,66 @@
+/* OMNI design tokens + shared primitives. Shared by the console (index.html) and the context menu (menu.html). */
+:root{
+  --paper:#f2f2f2;--card:#fff;--ink:#161616;--ink-2:#555;--muted:#858585;--faint:#c2c2c2;--line:#dedede;
+  --fill:#f3f3f3;--fill-soft:#f7f7f7;--fill-hover:#e7e7e7;--fill-active:#ededed;
+  --stage:linear-gradient(#3d565f,#c4d2d8);--stage-light:linear-gradient(#f7f9fa,#e3e9ec);
+  --ok:#86c99f;--warn:#edc463;--err:#ed8d8d;--danger:#c72f3b;--focus:#888;
+  --sans:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',sans-serif;
+  --mono:'Cascadia Mono',Consolas,'Microsoft YaHei UI',monospace;
+  --ease:cubic-bezier(.22,.75,.25,1);
+  --r-xs:4px;--r-card:7px;--r-menu:8px;--r-pop:16px;--r-pill:24px;--r-round:999px;
+  --shadow-pop:0 8px 30px #0000001a;
+  color-scheme:light;
+  font:400 14px/24px var(--sans);color:var(--ink);letter-spacing:0;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+}
+*,*::before,*::after{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit;letter-spacing:0}
+button{border:0;background:none;cursor:pointer;padding:0;touch-action:manipulation;transition:background-color .15s,color .15s}
+button:disabled{opacity:.45;cursor:default}
+:focus-visible{outline:2px solid var(--focus);outline-offset:4px}
+.num{font:500 18px/26px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* Hairline range. JS sets --progress (0%–100%) on input. */
+input[type=range].range{appearance:none;-webkit-appearance:none;display:block;width:100%;height:24px;margin:0;padding:0;border:0;cursor:pointer;touch-action:none;
+  background:linear-gradient(to right,var(--ink) 0 var(--progress,0%),var(--line) var(--progress,0%) 100%) center/100% 2px no-repeat}
+input[type=range].range::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;border:0;border-radius:50%;background:var(--ink)}
+input[type=range].range:focus-visible{outline:0}
+input[type=range].range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px #16161622}
+
+/* Pill button */
+.pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 14px;border-radius:var(--r-pill);background:var(--card);color:var(--ink);font:500 12px/20px var(--sans)}
+.pill:hover:not(:disabled){background:var(--fill-hover)}
+.pill.primary,.pill[aria-pressed=true]{background:var(--ink);color:#fff}
+.pill.primary:hover,.pill[aria-pressed=true]:hover{background:#333}
+
+/* Icon button: 44px hit area, 32px visible circle, 18px glyph */
+.icon-btn{position:relative;display:grid;place-items:center;width:44px;height:44px;color:var(--ink);isolation:isolate}
+.icon-btn::before{content:'';position:absolute;inset:6px;border-radius:50%;background:transparent;transition:background-color .16s;z-index:-1}
+.icon-btn:hover:not(:disabled)::before{background:var(--fill)}
+.icon-btn[aria-pressed=true]{color:#fff}
+.icon-btn[aria-pressed=true]::before{background:var(--ink)}
+.icon-btn.danger{color:var(--danger)}
+.icon-btn svg,.pill svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+/* Switch */
+input[type=checkbox].switch{appearance:none;position:relative;flex:none;width:48px;height:28px;margin:0;border:0;border-radius:20px;background:#ccc;cursor:pointer;transition:background-color .16s}
+input[type=checkbox].switch::before{content:'';position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .18s var(--ease)}
+input[type=checkbox].switch:checked{background:#202020}
+input[type=checkbox].switch:checked::before{transform:translateX(20px)}
+
+/* Segmented */
+.segment{display:flex;gap:6px}
+.segment>button{flex:1;min-height:36px;padding:4px 8px;border-radius:var(--r-pill);background:var(--fill-soft);color:#747474;font:500 12px/20px var(--sans)}
+.segment>button:hover{background:var(--fill-hover)}
+.segment>button[aria-pressed=true]{background:var(--ink);color:#fff}
+
+/* Status dot: data-state = ok | working | error */
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.dot[data-state=working]{background:var(--warn);animation:dot-pulse .9s ease-in-out infinite}
+.dot[data-state=error]{background:var(--err)}
+@keyframes dot-pulse{50%{opacity:.3}}
+
+/* Card */
+.card{background:var(--card);border-radius:var(--r-card);padding:24px}
+
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}

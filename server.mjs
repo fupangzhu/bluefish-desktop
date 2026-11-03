@@ -4,11 +4,11 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.svg':'image/svg+xml'};
+const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png'};
 export function createServer(){return http.createServer(async(req,res)=>{
   try{if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);return res.end();}
     const url=new URL(req.url,'http://127.0.0.1'),name=decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname);
-    if(!/^\/(index\.html|style\.css|src\/[a-z-]+\.mjs|assets\/(hand\.svg|rig\.json|master\.png|reconstructed\.png|layers\/[a-z_]+\.png)|examples\/[a-z-]+\.json)$/.test(name)){res.writeHead(404);return res.end();}
+    if(!/^\/(index\.html|overlay\.html|menu\.html|style\.css|tokens\.css|overlay\.css|menu\.css|src\/[a-z-]+\.mjs|assets\/(rig\.json|master\.png|reconstructed\.png|layers\/[a-z_]+\.png)|examples\/[a-z-]+\.json)$/.test(name)){res.writeHead(404);return res.end();}
     const body=await readFile(path.join(root,name));res.writeHead(200,{'Content-Type':types[path.extname(name)]||'application/octet-stream','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(req.method==='HEAD'?undefined:body);
   }catch{res.writeHead(404);res.end('Not found');}
 });}

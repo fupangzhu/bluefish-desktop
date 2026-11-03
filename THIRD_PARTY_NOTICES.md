@@ -19,6 +19,6 @@ These projects are not bundled, and the included character image is not a Grok c
 
 ## Artwork provenance
 
-The head artwork was generated from a supplied character reference, then separated into source-aligned layers and completed in occluded regions. assets/master-source.png is the 1254-pixel generated source; assets/master.png and the 2048-pixel layers are resampled derivatives. Completion details are recorded in assets/rig.json and README.md.
+The head artwork was generated from a supplied character reference, then separated into source-aligned layers and completed in occluded regions. assets/master-source.png is the 1254-pixel generated source; assets/master.png and the 2048-pixel layers are resampled derivatives. Completion details are recorded in assets/rig.json.
 
-The small rounded hands in assets/hand.svg are code-drawn additions introduced for the taskbar layout. Published taskbar demo media uses a generic mock taskbar, not a capture of a user's desktop.
+The two rounded hand shapes are drawn in code (src/hands.mjs). Demo media in docs/ uses an abstract mock desktop, not a capture of a real desktop.

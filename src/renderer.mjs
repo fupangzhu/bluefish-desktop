@@ -1,17 +1,22 @@
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
-const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;
-void main(){vec4 color=texture2D(image,tex);if(eyeOpen>=0.){vec2 p=(crop.xy+tex*crop.zw-eye.xy);float yy=-sin(eye.z)*p.x+cos(eye.z)*p.y;float top=eyeOpen>=.5?eye.w*(1.-2.*eyeOpen):0.;float bottom=eyeOpen>=.5?eye.w:eye.w*eyeOpen*2.;float mask=smoothstep(top-.0007,top+.0007,yy)*(1.-smoothstep(bottom-.0007,bottom+.0007,yy));color*=mask;}gl_FragColor=color*opacity;}`;
+const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;
+void main(){vec4 color=texture2D(image,tex);if(eyeOpen>=0.){vec2 p=(crop.xy+tex*crop.zw-eye.xy);float yy=-sin(eye.z)*p.x+cos(eye.z)*p.y;float top=eyeOpen>=.5?eye.w*(1.-2.*eyeOpen):0.;float bottom=eyeOpen>=.5?eye.w:eye.w*eyeOpen*2.;float e=max(.0007,aa);float mask=smoothstep(top-e,top+e,yy)*(1.-smoothstep(bottom-e,bottom+e,yy));color*=mask;}gl_FragColor=color*opacity;}`;
 const rad=d=>d*Math.PI/180;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const DROOP_MAX=90;       // degrees of bend at the ahoge tip when fully drooped
+const FALLBACK_TEX_SCALE=.5; // WebGL1 has no mipmaps for NPOT textures: pre-shrink layers instead
 export class Renderer{
   constructor(canvas,rig){
-    this.canvas=canvas;this.rig=rig;this.solo=null;this.gl=canvas.getContext('webgl',{alpha:true,premultipliedAlpha:true,antialias:true,preserveDrawingBuffer:true});
+    this.canvas=canvas;this.rig=rig;this.solo=null;const opts={alpha:true,premultipliedAlpha:true,antialias:true,preserveDrawingBuffer:true};
+    this.gl=canvas.getContext('webgl2',opts)||canvas.getContext('webgl',opts);
     if(!this.gl)throw Error('无法启用 WebGL，请开启硬件加速');
+    this.webgl2=typeof WebGL2RenderingContext!=='undefined'&&this.gl instanceof WebGL2RenderingContext;
     const g=this.gl,compile=(type,source)=>{const s=g.createShader(type);g.shaderSource(s,source);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw Error(g.getShaderInfoLog(s));return s;};
     this.program=g.createProgram();g.attachShader(this.program,compile(g.VERTEX_SHADER,VERT));g.attachShader(this.program,compile(g.FRAGMENT_SHADER,FRAG));g.linkProgram(this.program);if(!g.getProgramParameter(this.program,g.LINK_STATUS))throw Error(g.getProgramInfoLog(this.program));g.useProgram(this.program);
     this.buffer=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,this.buffer);
     for(const [name,offset] of [['pos',0],['uv',8]]){const loc=g.getAttribLocation(this.program,name);g.enableVertexAttribArray(loc);g.vertexAttribPointer(loc,2,g.FLOAT,false,16,offset);}
-    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye'].map(k=>[k,g.getUniformLocation(this.program,k)]));
+    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye','aa'].map(k=>[k,g.getUniformLocation(this.program,k)]));
     g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);this.layers=[];this.byName=new Map();this.stats={drawCalls:0,vertices:0,frameMs:0};
   }
   async init(){
@@ -19,7 +24,8 @@ export class Renderer{
       if(meta.empty)continue;
       const img=new Image();img.src=meta.file;await img.decode();
       const [x0,y0,x1,y1]=meta.box,width=x1-x0,height=y1-y0;
-      const cropped=document.createElement('canvas');cropped.width=width;cropped.height=height;cropped.getContext('2d').drawImage(img,x0,y0,width,height,0,0,width,height);
+      const k=this.webgl2?1:FALLBACK_TEX_SCALE,tw=Math.max(1,Math.round(width*k)),th=Math.max(1,Math.round(height*k));
+      const cropped=document.createElement('canvas');cropped.width=tw;cropped.height=th;const c2=cropped.getContext('2d');c2.imageSmoothingEnabled=true;c2.imageSmoothingQuality='high';c2.drawImage(img,x0,y0,width,height,0,0,tw,th);
       const layer={...meta,texture:this.texture(cropped),points:[],data:null};
       const n=meta.name.startsWith('eye_')?6:22;
       const vertex=(i,j)=>layer.points.push([x0+width*i/n,y0+height*j/n,i/n,j/n]);
@@ -29,14 +35,26 @@ export class Renderer{
     }
     return this;
   }
-  texture(image){const g=this.gl,t=g.createTexture();g.bindTexture(g.TEXTURE_2D,t);for(const [k,v] of [[g.TEXTURE_MIN_FILTER,g.LINEAR],[g.TEXTURE_MAG_FILTER,g.LINEAR],[g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE],[g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE]])g.texParameteri(g.TEXTURE_2D,k,v);g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,image);return t;}
-  project(px,py,s,layer){
+  texture(image){
+    const g=this.gl,t=g.createTexture();g.bindTexture(g.TEXTURE_2D,t);
+    for(const [k,v] of [[g.TEXTURE_MAG_FILTER,g.LINEAR],[g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE],[g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE]])g.texParameteri(g.TEXTURE_2D,k,v);
+    g.texImage2D(g.TEXTURE_2D,0,g.RGBA,g.RGBA,g.UNSIGNED_BYTE,image);
+    if(this.webgl2){ // layers are shown 8x+ smaller than the art grid: mipmaps (premultiplied, so no fringes) remove the aliasing
+      g.generateMipmap(g.TEXTURE_2D);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR_MIPMAP_LINEAR);
+      const ext=this.aniso??(this.aniso=g.getExtension('EXT_texture_filter_anisotropic')||g.getExtension('WEBKIT_EXT_texture_filter_anisotropic')||null);
+      if(ext)g.texParameterf(g.TEXTURE_2D,ext.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(4,g.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT)||1));
+    }else g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);
+    return t;
+  }  project(px,py,s,layer){
     const w=this.rig.size[0],h=this.rig.size[1],name=layer.name;
     const lag=(s.hair??s.yaw)-s.yaw,t=s.time||0;let localAngle=0;
-    if(name==='ahoge')localAngle=lag*.32+(s.secondary?Math.sin(t*2.3)*1.2:0);
+    let droop=0;
+    if(name==='ahoge'){localAngle=lag*.32+(s.secondary?Math.sin(t*2.3)*1.2:0)+(s.ahogeWag||0);droop=clamp(s.ahogeDroop||0,0,1);}
     if(name.startsWith('bow_'))localAngle=lag*.19+(s.secondary?Math.sin(t*2.0+(name==='bow_l'?0:1.3))*.8:0);
     if(name.startsWith('ear_'))localAngle=lag*.07+(s.secondary?Math.sin(t*1.5)*.22:0);
-    if(localAngle){const a=rad(localAngle),dx=px-layer.pivot[0],dy=py-layer.pivot[1];px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
+    if(localAngle||droop){const dx=px-layer.pivot[0],dy=py-layer.pivot[1];let deg=localAngle;
+      if(droop)deg+=droop*DROOP_MAX*clamp(Math.hypot(dx,dy)/(layer.box[3]-layer.box[1]),0,1)**1.3; // bend: grows toward the tip, positive = tip flops forward/down
+      const a=rad(deg);px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
     if(name.startsWith('eye_')){px+=(s.gx||0)*w*.006;py+=(s.gy||0)*h*.005;}
     let x=px/w-.5,y=py/h-.5;
     if(name==='hair_back'){const tip=Math.max(0,(py/h-.48)/.5);x+=lag*.0009*tip+(s.secondary?Math.sin(t*1.6+x*4)*.0025*tip:0);}
@@ -50,7 +68,7 @@ export class Renderer{
   draw(layer,s,opacity=1,eyeOpen=-1){
     const g=this.gl,[w,h]=this.rig.size,[x0,y0,x1,y1]=layer.box;
     layer.points.forEach((p,i)=>{const [x,y]=this.project(p[0],p[1],s,layer);layer.data[i*4]=x;layer.data[i*4+1]=y;});
-    g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
+    g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.aa,1.5/(this.canvas.width*.88));g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
     if(layer.eyeSide){const e=this.rig.eyes.find(e=>e.side===layer.eyeSide);g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,(e.box[3]-e.box[1])/h*.47);}
     g.bindTexture(g.TEXTURE_2D,layer.texture);g.bufferData(g.ARRAY_BUFFER,layer.data,g.DYNAMIC_DRAW);g.drawArrays(g.TRIANGLES,0,layer.data.length/4);this.stats.drawCalls++;this.stats.vertices+=layer.points.length;
   }

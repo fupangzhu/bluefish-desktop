@@ -1,6 +1,7 @@
 // Original control implementation; inspired by the damped motion described by GrokBot.
 export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-export const PARAMETERS={ParamAngleX:[-18,18,0],ParamAngleY:[-12,12,0],ParamAngleZ:[-10,10,0],ParamEyeLOpen:[0,1,1],ParamEyeROpen:[0,1,1],ParamEyeBallX:[-1,1,0],ParamEyeBallY:[-1,1,0]};
+export const YAW_LEFT=8;   // max turn to screen-left (deg); right stays 18
+export const PARAMETERS={ParamAngleX:[-YAW_LEFT,18,0],ParamAngleY:[-12,12,0],ParamAngleZ:[-10,10,0],ParamEyeLOpen:[0,1,1],ParamEyeROpen:[0,1,1],ParamEyeBallX:[-1,1,0],ParamEyeBallY:[-1,1,0]};
 export class Spring {
   constructor(value=0,frequency=10){this.value=value;this.velocity=0;this.frequency=frequency;}
   step(target,dt){
@@ -37,7 +38,7 @@ export function fromPromptSoulSegment(segment,duration=3){
   });
 }
 export class Motion {
-  constructor(random=Math.random){this.random=random;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair'].map(k=>[k,new Spring(0,k==='hair'?6:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.follow=true;this.idle=true;this.reduced=false;}
+  constructor(random=Math.random){this.random=random;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
   setGaze(x,y){if(Number.isFinite(x)&&Number.isFinite(y))this.gaze={x:clamp(x,-1,1),y:clamp(y,-1,1)};}
   blink(){this.blinkAt=this.time;}
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}
@@ -48,19 +49,25 @@ export class Motion {
     if(this.idle&&!this.reduced&&t>=this.nextBlink){this.blink();this.nextBlink=t+3.2+this.random()*4;}
     let b=1,bt=t-this.blinkAt;
     if(bt>=0&&bt<0.32)b=bt<0.13?1-Math.sin(bt/0.13*Math.PI/2):Math.sin((bt-0.13)/0.19*Math.PI/2);
-    const gx=this.follow?this.gaze.x:0,gy=this.follow?this.gaze.y:0;
+    const ov=this.override,ovGaze=ov&&ov.gx!==undefined,gx=ovGaze?clamp(ov.gx||0,-1,1):this.follow?this.gaze.x:0,gy=ovGaze?clamp(ov.gy||0,-1,1):this.follow?this.gaze.y:0;   // an override without gx (e.g. only droop) keeps normal gaze
     const target={yaw:this.pose.yaw+gx*14,pitch:this.pose.pitch-gy*8,roll:this.pose.roll+gx*2.5};
+    if(ov){target.yaw+=ov.yaw||0;target.roll+=ov.roll||0;}
     if(this.idle&&!this.reduced){target.pitch+=Math.sin(t*1.35)*0.65;target.roll+=Math.sin(t*0.65)*0.45;}
     const gt=t-this.gestureAt,env=gt>=0&&gt<1.8?Math.sin(gt/1.8*Math.PI):0;
     if(this.gestureName==='nod')target.pitch+=Math.sin(gt*10)*6*env;
     if(this.gestureName==='shakehead')target.yaw+=Math.sin(gt*11)*10*env;
     if(this.gestureName==='happy')target.roll+=Math.sin(gt*8)*5*env;
+    const wag=this.gestureName==='happy'&&!this.reduced&&env>0?(Math.sin(gt*16)*14+Math.sin(gt*9+1)*3)*env:0;   // ahoge wag with a little bounce
+    const droopTarget=ov?clamp(ov.droop||0,0,1):0,droopSpring=this.springs.droop;droopSpring.frequency=droopTarget>droopSpring.value?5:9.5;   // wilt ~1s, perk up ~0.5s
     const p={ParamAngleX:target.yaw,ParamAngleY:target.pitch,ParamAngleZ:target.roll,ParamEyeLOpen:b,ParamEyeROpen:b,ParamEyeBallX:gx,ParamEyeBallY:gy};
     this.queue=this.queue.filter(q=>q.end>t);
     for(const q of this.queue){for(const [k,v] of Object.entries(cueSample(q,t-q.start)))p[k]+=v;}
+    // Turning to screen-left flattens the 2.5D art quickly, so ease into a smaller limit on that side.
+    if(p.ParamAngleX<0)p.ParamAngleX=-YAW_LEFT*Math.tanh(-p.ParamAngleX/YAW_LEFT);
     for(const [k,[lo,hi]] of Object.entries(PARAMETERS))p[k]=clamp(p[k],lo,hi);
+    if(ov&&Number.isFinite(ov.eyeCap)){p.ParamEyeLOpen=Math.min(p.ParamEyeLOpen,ov.eyeCap);p.ParamEyeROpen=Math.min(p.ParamEyeROpen,ov.eyeCap);}
     const ease=(k,v)=>this.reduced?(this.springs[k].value=v):this.springs[k].step(v,dt);
     if(this.gestureName==='wink'&&gt>=0&&gt<.6)p.ParamEyeLOpen*=Math.abs(Math.cos(gt/.6*Math.PI));
-    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),time:t,secondary:this.idle&&!this.reduced,breath:this.idle&&!this.reduced?Math.sin(t*1.6)*.0018:0};
+    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeDroop:ease('droop',droopTarget),time:t,secondary:this.idle&&!this.reduced,breath:this.idle&&!this.reduced?Math.sin(t*1.6)*.0018:0};
   }
 }

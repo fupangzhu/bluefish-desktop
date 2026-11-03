@@ -1,29 +1,60 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>蓝色肥鱼 · 动作工作台</title><link rel="stylesheet" href="style.css"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>蓝色肥鱼</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"></head>
 <body>
-<main class="workspace">
-  <header><a class="brand" href="./"><span class="brandmark">≈</span> BLUEFISH <span class="edition">TASKBAR COMPANION / 03</span></a><span class="status"><i></i><span id="status">正在准备角色</span></span></header>
-  <section class="intro"><span class="eyebrow">一张原画，开始有了呼吸</span><h1>你好，大肥鱼。</h1><p>移动鼠标，看看她的反应。</p></section>
-  <section class="studio">
-    <div class="preview" id="preview"><span class="stage-caption">TASKBAR PEEK · LIVE PREVIEW</span><div class="halo"></div><div id="petFrame" class="pet-frame"><canvas id="avatar" aria-label="蓝发肥鱼动态角色"></canvas><div class="taskbar-mock" aria-hidden="true"><span class="windows-mark">⊞</span><span class="mock-search">⌕</span><span class="mock-app">▰</span><span class="mock-app">◉</span><span class="mock-clock">18:00</span></div><div id="hands" class="hands" aria-label="搭在任务栏上的小手"><img class="hand hand-left" src="assets/hand.svg" alt="左手" draggable="false"><img class="hand hand-right" src="assets/hand.svg" alt="右手" draggable="false"></div></div><div class="preview-footer"><span>视线 · 眨眼 · 固定小手</span><button id="background" class="text-button">切换深色背景 ↗</button></div></div>
-    <aside>
-      <div class="panel-heading"><span class="eyebrow">动作控制</span><span class="small-tag">LOCAL</span></div>
-      <div class="switch-row"><label for="dock">吸附到任务栏</label><input type="checkbox" id="dock" checked></div>
-      <div class="range-heading"><label for="desktopSize">角色大小</label><span><input id="desktopSizeNumber" class="size-number" type="number" min="80" max="640" step="1" value="200" aria-label="角色大小像素"> px</span></div><input id="desktopSize" type="range" min="80" max="640" step="1" value="200"><p class="settings-hint" id="settingsHint">80–640 px 连续调节 · 下方为任务栏效果预览</p>
-      <div class="switch-row"><label for="follow">跟随鼠标</label><input type="checkbox" id="follow" checked></div>
-      <div class="switch-row"><label for="idle">自然待机与眨眼</label><input type="checkbox" id="idle" checked></div>
-      <div class="switch-row"><label for="reduced">减少动态</label><input type="checkbox" id="reduced"></div>
-      <div class="divider"></div>
-      <div class="range-heading"><label for="yaw">左右转头</label><output id="yawValue">0°</output></div><input id="yaw" type="range" min="-18" max="18" step="0.1" value="0">
-      <div class="range-heading"><label for="pitch">抬头 / 低头</label><output id="pitchValue">0°</output></div><input id="pitch" type="range" min="-12" max="12" step="0.1" value="0">
-      <div class="range-heading"><label for="roll">歪头</label><output id="rollValue">0°</output></div><input id="roll" type="range" min="-10" max="10" step="0.1" value="0">
-      <div class="actions"><button data-action="blink">眨眨眼</button><button data-action="nod">点点头</button><button data-action="shakehead">摇摇头</button><button data-action="happy">开心一下</button><button data-action="wink">单眼眨眼</button><button id="showMaster">对照完整母版</button></div>
-      <button id="reset" class="reset">恢复自然姿态 ↺</button>
-      <details><summary>分件与绑定检查</summary><p>19 张 2048×2048 透明 PNG；身体和嘴为空层。切换下拉项单独查看各层。</p><select id="soloLayer" aria-label="单独查看图层"><option value="">显示完整绑定角色</option></select></details>
-      <details><summary>PromptSoul 动作适配</summary><p>载入已解析的 segment JSON，或本项目的临时参数曲线。仅支持当前角色已有参数。</p><label class="file-button">载入动作 JSON<input id="cueFile" type="file" accept=".json,application/json"></label><button id="demoCue" class="text-button">播放适配示例 ↗</button><p id="cueStatus" role="status">未连接外部服务</p></details>
-    </aside>
+<div class="strip"><span class="brand" data-icon="brand" aria-hidden="true"></span></div>
+<main class="shell">
+  <section class="stage" id="stage">
+    <canvas id="avatar" aria-label="蓝发肥鱼动态角色"></canvas>
+    <span class="status" id="statusWrap" title="正在准备角色"><i class="dot" id="status" data-state="working"></i></span>
+    <button class="icon-btn stage-btn" id="background" title="切换浅色背景" aria-label="切换浅色背景"><span data-icon="sun"></span></button>
   </section>
-  <footer><p>吸附时拖动只调整水平位置，小手固定搭在任务栏上。角色上 Ctrl＋滚轮可微调大小。</p><span>桌面启动：蓝色肥鱼.exe</span></footer>
+  <aside class="rail" id="rail">
+    <section class="card" id="sizeCard" hidden>
+      <div class="line">
+        <span class="ico" data-icon="size" title="大小" aria-hidden="true"></span>
+        <output class="num" id="sizeValue">240</output>
+      </div>
+      <input id="size" class="range" type="range" min="150" max="460" step="1" value="240" aria-label="大小">
+    </section>
+    <section class="card">
+      <div class="axis"><div class="line"><span class="ico" data-icon="yaw" title="左右转头" aria-hidden="true"></span><output class="num" id="yawValue" title="双击归零">0.0°</output></div><input id="yaw" class="range" type="range" min="-8" max="18" step="0.1" value="0" aria-label="左右转头"></div>
+      <div class="axis"><div class="line"><span class="ico" data-icon="pitch" title="抬头 / 低头" aria-hidden="true"></span><output class="num" id="pitchValue" title="双击归零">0.0°</output></div><input id="pitch" class="range" type="range" min="-12" max="12" step="0.1" value="0" aria-label="抬头 / 低头"></div>
+      <div class="axis"><div class="line"><span class="ico" data-icon="roll" title="歪头" aria-hidden="true"></span><output class="num" id="rollValue" title="双击归零">0.0°</output></div><input id="roll" class="range" type="range" min="-10" max="10" step="0.1" value="0" aria-label="歪头"></div>
+    </section>
+    <section class="card">
+      <div class="pills">
+        <button class="pill" data-action="blink" title="眨眼" aria-label="眨眼"><span data-icon="blink"></span></button>
+        <button class="pill" data-action="wink" title="单眼眨眼" aria-label="单眼眨眼"><span data-icon="wink"></span></button>
+        <button class="pill" data-action="nod" title="点头" aria-label="点头"><span data-icon="nod"></span></button>
+        <button class="pill" data-action="shakehead" title="摇头" aria-label="摇头"><span data-icon="shake"></span></button>
+        <button class="pill" data-action="happy" title="开心" aria-label="开心"><span data-icon="happy"></span></button>
+        <button class="pill" id="reset" title="恢复自然姿态" aria-label="恢复自然姿态"><span data-icon="reset"></span></button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="toggles">
+        <button class="icon-btn" id="follow" aria-pressed="true" title="跟随鼠标" aria-label="跟随鼠标"><span data-icon="follow"></span></button>
+        <button class="icon-btn" id="idle" aria-pressed="true" title="自然待机与眨眼" aria-label="自然待机与眨眼"><span data-icon="idle"></span></button>
+        <button class="icon-btn" id="reduced" aria-pressed="false" title="减少动态" aria-label="减少动态"><span data-icon="reduced"></span></button>
+        <button class="icon-btn" id="docked" aria-pressed="true" title="趴在状态栏" aria-label="趴在状态栏" hidden><span data-icon="dock"></span></button>
+      </div>
+    </section>
+    <section class="card adv" id="adv" data-open="false">
+      <div class="line">
+        <span class="ico" data-icon="layers" title="高级" aria-hidden="true"></span>
+        <button class="icon-btn" id="advToggle" aria-expanded="false" aria-controls="advBody" title="展开高级选项" aria-label="展开高级选项"><span data-icon="chevron"></span></button>
+      </div>
+      <div class="adv-body" id="advBody" hidden>
+        <select id="soloLayer" aria-label="单独查看图层" title="单独查看图层"><option value="">—</option></select>
+        <div class="tools">
+          <button class="icon-btn" id="showMaster" aria-pressed="false" title="对照完整母版" aria-label="对照完整母版"><span data-icon="compare"></span></button>
+          <button class="icon-btn" id="uploadCue" title="导入动作 JSON" aria-label="导入动作 JSON"><span data-icon="upload"></span></button>
+          <button class="icon-btn" id="demoCue" title="播放适配示例" aria-label="播放适配示例"><span data-icon="play"></span></button>
+          <input id="cueFile" type="file" accept=".json,application/json" hidden>
+        </div>
+      </div>
+    </section>
+  </aside>
 </main>
-<p id="error" role="alert" hidden></p><script type="module" src="src/app.mjs"></script>
+<script type="module" src="src/app.mjs"></script>
 </body></html>

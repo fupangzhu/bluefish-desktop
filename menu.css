@@ -1,0 +1,15 @@
+html,body{margin:0;background:transparent;overflow:hidden;user-select:none;-webkit-user-select:none;cursor:default}
+.card.menu{margin:10px;padding:16px;border-radius:var(--r-pop);box-shadow:var(--shadow-pop);display:flex;flex-direction:column;gap:4px;transform-origin:top left;animation:pop-in .18s var(--ease) both}
+.card.menu.replay{animation:none}
+@keyframes pop-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.row{display:flex;align-items:center;min-height:44px}
+.row.size{gap:10px}
+.row.size .range{flex:1;min-width:0}
+.row.size .num{flex:none;width:36px;text-align:right}
+.ico{display:grid;place-items:center;flex:none;width:18px;height:18px;color:var(--ink)}
+.ico svg,.icon-btn>span{display:grid;place-items:center}
+.ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.icon-btn>span svg{width:18px;height:18px}
+.row.grid{display:grid;grid-template-columns:repeat(5,44px);justify-content:space-between}
+.row.grid .last{grid-column:5}
+hr{height:1px;margin:4px 0;border:0;background:var(--line)}
