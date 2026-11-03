@@ -5,6 +5,7 @@ node_modules/
 .test-output/
 work/
 dist/
+tools/docs/.work/
 *.exe
 *.zip
 *.log

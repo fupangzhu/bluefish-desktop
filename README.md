@@ -56,3 +56,7 @@ assets/    2048² 分层 PNG 与 rig.json
 ```
 
 角色由一张原画拆成 17 个图层，用自写的 WebGL 网格绑定驱动，不依赖 Live2D。
+
+## 开发
+
+环境要求、常用命令、README 图片的重新生成（真实渲染抓帧，见 `tools/docs/`）、便携包 / 安装包构建与发版流程，都在 [DEVELOPMENT.md](DEVELOPMENT.md)。
