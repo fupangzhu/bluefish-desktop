@@ -60,7 +60,9 @@ if (-not $SkipTests) {
 }
 
 Write-Host "-- launcher"
-& $csc /nologo /codepage:65001 /win32icon:assets/icon.ico /target:winexe /reference:System.Windows.Forms.dll "/out:$dist\蓝色肥鱼.exe" tools/BluefishLauncher.cs
+$icon = Join-Path $repo "assets\icon.ico"
+$launcherSource = Join-Path $repo "tools\BluefishLauncher.cs"
+& $csc /nologo /codepage:65001 "/win32icon:$icon" /target:winexe /reference:System.Windows.Forms.dll "/out:$dist\蓝色肥鱼.exe" $launcherSource
 if ($LASTEXITCODE -ne 0) { throw "launcher build failed" }
 
 Write-Host "-- portable zip"
@@ -78,10 +80,11 @@ $assets = @(
 
 if (-not $NoInstaller) {
   Write-Host "-- installer"
-  & $csc /nologo /codepage:65001 /win32icon:assets/icon.ico /target:winexe `
+  $installerSource = Join-Path $repo "tools\installer\setup-stub.cs"
+  & $csc /nologo /codepage:65001 "/win32icon:$icon" /target:winexe `
     /reference:System.Windows.Forms.dll /reference:System.Drawing.dll `
     /reference:System.IO.Compression.FileSystem.dll /reference:System.IO.Compression.dll `
-    "/out:$dist\setup-stub.exe" tools/installer/setup-stub.cs
+    "/out:$dist\setup-stub.exe" $installerSource
   if ($LASTEXITCODE -ne 0) { throw "installer stub build failed" }
   & $Python tools/installer/make_installer.py
   if ($LASTEXITCODE -ne 0) { throw "installer package failed" }
