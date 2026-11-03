@@ -2,12 +2,14 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>蓝色肥鱼 · 动作工作台</title><link rel="stylesheet" href="style.css"></head>
 <body>
 <main class="workspace">
-  <header><a class="brand" href="./"><span class="brandmark">≈</span> BLUEFISH <span class="edition">LAYERED CHARACTER / 02</span></a><span class="status"><i></i><span id="status">正在准备角色</span></span></header>
+  <header><a class="brand" href="./"><span class="brandmark">≈</span> BLUEFISH <span class="edition">TASKBAR COMPANION / 03</span></a><span class="status"><i></i><span id="status">正在准备角色</span></span></header>
   <section class="intro"><span class="eyebrow">一张原画，开始有了呼吸</span><h1>你好，大肥鱼。</h1><p>移动鼠标，看看她的反应。</p></section>
   <section class="studio">
-    <div class="preview" id="preview"><span class="stage-caption">ORIGINAL ART · LIVING MOTION</span><div class="halo"></div><canvas id="avatar" aria-label="蓝发肥鱼动态角色"></canvas><div class="preview-footer"><span>视线 · 眨眼 · 头部转动</span><button id="background" class="text-button">切换深色背景 ↗</button></div></div>
+    <div class="preview" id="preview"><span class="stage-caption">TASKBAR PEEK · LIVE PREVIEW</span><div class="halo"></div><div id="petFrame" class="pet-frame"><canvas id="avatar" aria-label="蓝发肥鱼动态角色"></canvas><div class="taskbar-mock" aria-hidden="true"><span class="windows-mark">⊞</span><span class="mock-search">⌕</span><span class="mock-app">▰</span><span class="mock-app">◉</span><span class="mock-clock">18:00</span></div><div id="hands" class="hands" aria-label="搭在任务栏上的小手"><img class="hand hand-left" src="assets/hand.svg" alt="左手" draggable="false"><img class="hand hand-right" src="assets/hand.svg" alt="右手" draggable="false"></div></div><div class="preview-footer"><span>视线 · 眨眼 · 固定小手</span><button id="background" class="text-button">切换深色背景 ↗</button></div></div>
     <aside>
       <div class="panel-heading"><span class="eyebrow">动作控制</span><span class="small-tag">LOCAL</span></div>
+      <div class="switch-row"><label for="dock">吸附到任务栏</label><input type="checkbox" id="dock" checked></div>
+      <div class="range-heading"><label for="desktopSize">角色大小</label><span><input id="desktopSizeNumber" class="size-number" type="number" min="80" max="640" step="1" value="200" aria-label="角色大小像素"> px</span></div><input id="desktopSize" type="range" min="80" max="640" step="1" value="200"><p class="settings-hint" id="settingsHint">80–640 px 连续调节 · 下方为任务栏效果预览</p>
       <div class="switch-row"><label for="follow">跟随鼠标</label><input type="checkbox" id="follow" checked></div>
       <div class="switch-row"><label for="idle">自然待机与眨眼</label><input type="checkbox" id="idle" checked></div>
       <div class="switch-row"><label for="reduced">减少动态</label><input type="checkbox" id="reduced"></div>
@@ -21,7 +23,7 @@
       <details><summary>PromptSoul 动作适配</summary><p>载入已解析的 segment JSON，或本项目的临时参数曲线。仅支持当前角色已有参数。</p><label class="file-button">载入动作 JSON<input id="cueFile" type="file" accept=".json,application/json"></label><button id="demoCue" class="text-button">播放适配示例 ↗</button><p id="cueStatus" role="status">未连接外部服务</p></details>
     </aside>
   </section>
-  <footer><p>完整头部 · 独立分件 · 分层网格绑定。保留母版的无嘴表情，可查看并导出各层。</p><span>桌面悬浮：双击「启动桌面肥鱼.cmd」</span></footer>
+  <footer><p>吸附时拖动只调整水平位置，小手固定搭在任务栏上。角色上 Ctrl＋滚轮可微调大小。</p><span>桌面启动：蓝色肥鱼.exe</span></footer>
 </main>
 <p id="error" role="alert" hidden></p><script type="module" src="src/app.mjs"></script>
 </body></html>

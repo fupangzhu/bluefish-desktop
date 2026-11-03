@@ -15,16 +15,25 @@ try{
   requestAnimationFrame(draw);
   // A small, documented debug interface also supports embedding into another UI.
   window.bluefish={motion,renderer,rig,pause(v=true){paused=v;},render(patch={}){renderer.render({...motion.current,...patch});},playPromptSoulSegment(segment,duration=3){for(const a of fromPromptSoulSegment(segment,duration))motion.playCue(a.cue,a.delay);}};
+  const frame=document.querySelector('#petFrame');let scene={size:200,docked:true},settingsTimer,pendingSettings={};
+  function configureScene(value){scene={...scene,...value};scene.size=Math.max(80,Math.min(640,Math.round(Number(scene.size)||200)));scene.edge=Math.round(scene.size*.64);document.documentElement.classList.toggle('docked',scene.docked);frame.style.setProperty('--pet-size',scene.size+'px');frame.style.setProperty('--dock-edge',scene.edge+'px');document.querySelector('#dock').checked=scene.docked;document.querySelector('#desktopSize').value=scene.size;document.querySelector('#desktopSizeNumber').value=scene.size;window.bluefish.settings={...scene};lastHit=null;}
+  function updateSettings(patch){configureScene(patch);clearTimeout(settingsTimer);if(window.pet){pendingSettings={...pendingSettings,...patch};settingsTimer=setTimeout(()=>{const patch=pendingSettings;pendingSettings={};window.pet.updateSettings(patch).then(value=>value&&configureScene(value)).catch(console.error);},50);}}
+  window.bluefish.updateSettings=updateSettings;configureScene(scene);
+  document.querySelector('#dock').addEventListener('change',e=>updateSettings({docked:e.target.checked}));document.querySelector('#desktopSize').addEventListener('input',e=>updateSettings({size:+e.target.value}));document.querySelector('#desktopSizeNumber').addEventListener('change',e=>updateSettings({size:+e.target.value}));
+  if(window.pet){window.pet.onSettings(configureScene);const value=await window.pet.getSettings();if(value)configureScene(value);document.querySelector('#settingsHint').textContent='实时控制桌面角色 · Ctrl＋滚轮也可调大小';}
+  function hitTest(x,y){if(scene.docked){const c=canvas.getBoundingClientRect();for(const hand of document.querySelectorAll('.hand')){const r=hand.getBoundingClientRect(),hx=x+c.left-(r.left+r.width/2),hy=y+c.top-(r.top+r.height/2);if((hx/(r.width*.46))**2+(hy/(r.height*.45))**2<=1)return true;}if(y>=scene.edge)return false;}return renderer.hitTest(x,y);}
+  window.bluefish.hitTest=hitTest;
   function gaze(x,y){const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
-  if(window.pet){
-    window.pet.onPointer(p=>{window.bluefish.pointer=p;motion.setGaze(p.gx,p.gy);const hit=renderer.hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;window.bluefish.isInteractive=hit;window.pet.setInteractive(hit);}});
-    canvas.addEventListener('pointerdown',e=>{if(e.button===0){canvas.setPointerCapture(e.pointerId);motion.blink();window.pet.drag(true);}});
+  if(window.pet&&overlay){
+    window.pet.onPointer(p=>{window.bluefish.pointer=p;motion.setGaze(p.gx,p.gy);const hit=hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;window.bluefish.isInteractive=hit;window.pet.setInteractive(hit);}});
+    frame.addEventListener('pointerdown',e=>{if(e.button===0){frame.setPointerCapture(e.pointerId);motion.blink();window.pet.drag(true);}});
     function endDrag(){window.pet.drag(false);lastHit=null;}
     addEventListener('pointerup',endDrag);
-    canvas.addEventListener('pointercancel',endDrag);
-    canvas.addEventListener('lostpointercapture',endDrag);
+    frame.addEventListener('pointercancel',endDrag);
+    frame.addEventListener('lostpointercapture',endDrag);
     addEventListener('blur',endDrag);
-    canvas.addEventListener('contextmenu',e=>{e.preventDefault();window.pet.menu();});
+    frame.addEventListener('contextmenu',e=>{e.preventDefault();window.pet.menu();});
+    addEventListener('wheel',e=>{if(e.ctrlKey){e.preventDefault();window.pet.resizeStep(e.deltaY<0?1:-1);}},{passive:false});
     window.pet.onAction(name=>{if(name==='toggle-follow')motion.follow=!motion.follow;else if(name==='toggle-idle')motion.idle=!motion.idle;else if(name==='reset')motion.reset();else motion.gesture(name);});
   }else{
     addEventListener('pointermove',e=>gaze(e.clientX,e.clientY));
