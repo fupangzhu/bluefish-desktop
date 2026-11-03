@@ -2,6 +2,7 @@ import {Motion} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {Peek} from './peek.mjs';
 import {drawHands,makeSkin,sampleSkin} from './hands.mjs';
+import {TouchInput} from './touch.mjs';
 
 // ---- Tuning knobs ---------------------------------------------------------------------------------
 // Art-space y (0..1 on the 2048 grid) of the horizontal cut line. The head canvas is placed so that
@@ -32,8 +33,10 @@ motion.reduced=state.reduced;
 let L={W:0,H:0,s:0,docked:true,grip:0,ledgeY:0,dpr:1};   // layout
 let pos={left:0,top:0};                                    // current head canvas position (window px)
 let skin=makeSkin();
-let pointer=null,pointerAt=-1e9,pokeFlag=false,dragging=false,paused=false,lastHit=null,renderer=null,rig=null;
+let pointer=null,pointerAt=-1e9,pokeFlag=false,paused=false,lastHit=null,renderer=null,rig=null;
 let lastPose={yaw:0,pitch:0,roll:0},lastMainFollow;
+let activePointer=null;
+const touchInput=new TouchInput(motion.touch,on=>pet?.drag(on));
 
 function layout(){
   const W=innerWidth,H=innerHeight,s=state.size,docked=state.docked,grip=docked?Math.round(s*GRIP_RATIO):0,dpr=Math.min(devicePixelRatio||1,2);
@@ -71,6 +74,10 @@ function hitTest(x,y){
   if(L.docked&&y>=L.ledgeY)return false;
   return renderer.hitTest(x-pos.left,y-pos.top);
 }
+function partAt(x,y){
+  if(handsAlpha(x,y)>24||(L.docked&&y>=L.ledgeY))return null;
+  return renderer?.pickPart(x-pos.left,y-pos.top)||null;
+}
 
 // ---- state coming from the main process ---------------------------------------------------------------
 function applyState(next){
@@ -88,20 +95,32 @@ function applyState(next){
 }
 
 // ---- input ------------------------------------------------------------------------------------------
-function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){motion.setGaze(p.gx,p.gy);const hit=hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
+function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){touchInput.move(p);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
 function onDown(e){
-  if(e.button!==0)return;
-  if(!pet&&!hitTest(e.clientX,e.clientY))return;
+  if(e.button!==0||activePointer!==null||!hitTest(e.clientX,e.clientY))return;
+  activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
-  motion.blink();pokeFlag=true;dragging=true;pet?.drag(true);
+  const part=partAt(e.clientX,e.clientY);
+  const grip=part==='ahoge'?renderer.pickHit(e.clientX-pos.left,e.clientY-pos.top):null;
+  touchInput.begin(part,{x:e.clientX,y:e.clientY},L.s,grip);
+  if(!part)motion.blink();pokeFlag=true;
+  lastHit=true;pet?.setInteractive(true);
+  document.documentElement.style.cursor=part==='ahoge'?'grabbing':'';
 }
-function endDrag(){if(dragging&&pet)pet.drag(false);dragging=false;lastHit=null;}
+function endDrag(e){
+  if(e?.pointerId!==undefined&&activePointer!==null&&e.pointerId!==activePointer)return;
+  // Include the release coordinates in case the final movement preceded a pointer tick.
+  if(e?.type==='pointerup')touchInput.move({x:e.clientX,y:e.clientY});
+  touchInput.end(e?.type!=='pointerup');activePointer=null;lastHit=null;
+  document.documentElement.style.cursor='';
+}
 for(const el of [canvas,handsCanvas]){
   el.addEventListener('pointerdown',onDown);
   el.addEventListener('pointercancel',endDrag);
   el.addEventListener('lostpointercapture',endDrag);
-  el.addEventListener('contextmenu',e=>{e.preventDefault();pokeFlag=true;pet?.menu();});
+  el.addEventListener('contextmenu',e=>{e.preventDefault();endDrag();pokeFlag=true;pet?.menu();});
 }
+addEventListener('pointermove',e=>{if(e.pointerId===activePointer)touchInput.move({x:e.clientX,y:e.clientY});});
 addEventListener('pointerup',endDrag);
 addEventListener('blur',endDrag);
 addEventListener('wheel',e=>{pokeFlag=true;if(e.ctrlKey){e.preventDefault();pet?.zoom(-Math.sign(e.deltaY));}},{passive:false});
@@ -117,20 +136,20 @@ function frame(now){
     const fresh=pointer&&performance.now()-pointerAt<800;
     let near=false;if(fresh)near=Math.hypot(pointer.x-cx,pointer.y-cy)<Math.max(NEAR_RATIO*s,NEAR_MIN);
     const follow=state.follow;
-    const out=peek.update(dt,{gx:fresh&&follow?pointer.gx:0,gy:fresh&&follow?pointer.gy:0,near:near||!follow,poke:pokeFlag||dragging,docked:L.docked,reduced:state.reduced});
+    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx:0,gy:fresh&&follow?pointer.gy:0,near:near||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced});
     pokeFlag=false;
     motion.override=follow?out.override:null;
     if(out.gesture)motion.gesture(out.gesture);
     const cur=motion.step(dt);
-    renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);
     place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
+    renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);
     drawHandsFrame(out);
     bluefish.last=out;
   }
   requestAnimationFrame(frame);
 }
 
-const bluefish=window.bluefish={motion,peek,state,pointer:null,isInteractive:false,hitTest,layout:()=>L,position:()=>pos,
+const bluefish=window.bluefish={motion,peek,state,pointer:null,isInteractive:false,hitTest,partAt,touchInput,layout:()=>L,position:()=>pos,
   forceSulk(){peek.forceSulk();},forceStep(dir){peek.forceStep(dir);},pause(v=true){paused=v;},get renderer(){return renderer;},get rig(){return rig;},
   setPointer,get skin(){return skin;}};
 
@@ -143,14 +162,14 @@ try{
   skin=await sampleSkin();
   if(pet){
     pet.onPointer(setPointer);
-    pet.onAction(name=>{pokeFlag=true;if(name==='reset'){motion.reset();}else motion.gesture(name);});
+    pet.onAction(name=>{pokeFlag=true;if(name==='reset'){endDrag();motion.reset();}else motion.gesture(name);});
   }else{
     applyState(state);
     addEventListener('pointermove',e=>{const s=L.s,cx=pos.left+s/2,cy=pos.top+s/2;setPointer({x:e.clientX,y:e.clientY,gx:clamp((e.clientX-cx)/(s*.7),-1,1),gy:clamp((e.clientY-cy)/(s*.7),-1,1)});});
     document.documentElement.addEventListener('pointerleave',()=>{pointer=null;motion.setGaze(0,0);});
   }
   layout();
-  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();paused=true;});
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endDrag();paused=true;});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());
   requestAnimationFrame(frame);
 }catch(error){errorBox.hidden=false;errorBox.textContent=error.message;console.error(error);}

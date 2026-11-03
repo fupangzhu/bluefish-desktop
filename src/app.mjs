@@ -1,6 +1,7 @@
 import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {hydrate,icons} from './icons.mjs';
+import {TouchInput} from './touch.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const ctl=window.petControl||null;
@@ -60,6 +61,7 @@ for(const el of document.querySelectorAll('input.range'))progress(el);
 /* Actions */
 document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{motion.gesture(b.dataset.action);ctl?.action(b.dataset.action);}));
 $('#reset').addEventListener('click',()=>{
+  endTouch();
   motion.reset();motion.follow=true;
   apply({follow:true,pose:{yaw:0,pitch:0,roll:0}});
   ctl?.action('reset');
@@ -91,7 +93,25 @@ function gaze(x,y){const r=canvas.getBoundingClientRect();motion.setGaze((x-r.le
 stage.addEventListener('pointermove',e=>gaze(e.clientX,e.clientY));
 stage.addEventListener('pointerleave',()=>motion.setGaze(0,0));
 addEventListener('blur',()=>motion.setGaze(0,0));
-canvas.addEventListener('pointerdown',()=>motion.blink());
+const touchInput=new TouchInput(motion.touch);
+let touchPointer=null;
+const canvasPoint=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
+canvas.addEventListener('pointerdown',e=>{
+  if(e.button!==0||touchPointer!==null||!renderer)return;
+  const p=canvasPoint(e);if(!renderer.hitTest(p.x,p.y))return;
+  touchPointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
+  const hit=renderer.pickHit(p.x,p.y),part=hit?.part;
+  touchInput.begin(part,{x:e.clientX,y:e.clientY},canvas.clientWidth,hit);
+  if(!part)motion.blink();canvas.style.cursor=part==='ahoge'?'grabbing':'';
+});
+canvas.addEventListener('pointermove',e=>{if(e.pointerId===touchPointer)touchInput.move({x:e.clientX,y:e.clientY});});
+function endTouch(e){
+  if(e?.pointerId!==undefined&&touchPointer!==null&&e.pointerId!==touchPointer)return;
+  if(e?.type==='pointerup')touchInput.move({x:e.clientX,y:e.clientY});
+  touchInput.end(e?.type!=='pointerup');touchPointer=null;canvas.style.cursor='';
+}
+for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,endTouch);
+addEventListener('blur',endTouch);
 
 /* Motion JSON */
 function importMotion(data){if(data.cues)window.bluefish.playPromptSoulSegment(data);else motion.playCue(data);setStatus('ok','动作已加入播放队列');}
@@ -122,6 +142,6 @@ try{
   let last=performance.now();
   function draw(now){if(!paused){motion.step(Math.min(.1,(now-last)/1000));renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
-  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();paused=true;setStatus('error','显卡上下文已暂停');});
+  canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());
 }catch(error){fail(error);}

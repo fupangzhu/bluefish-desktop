@@ -23,7 +23,7 @@ tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 38 项）
+test/           node --test 单测（当前 57 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
@@ -40,10 +40,26 @@ test/           node --test 单测（当前 38 项）
 ```powershell
 npm start          # 启动桌面宠物（Electron）
 npm run preview    # 浏览器预览控制台 http://127.0.0.1:8766
-npm test           # node --test，38 项逻辑测试
+npm test           # node --test，57 项逻辑测试
 ```
 
 调试快捷键：`Ctrl+Shift+F10` 显示/隐藏　`Ctrl+Shift+F11` 回到原位。
+
+### 呆毛与耳朵交互（当前源码）
+
+- 捏住呆毛后拖动：按实际命中的发丝位置固定抓点，保持发根与头饰连接；沿发丝曲线先用弯曲余量拉直，再最多约 18% 弹性拉伸。抓点附近有轻微捏紧，松手阻尼回弹，疼痛眼睛随之恢复。
+- 单击哪只耳朵，哪只随机快速折动 1–2 次；在耳朵上拖动仍可移动整个角色。
+- 待机时每隔随机 60–120 秒触发一次较轻的单耳扑闪；关闭待机或开启减少动态效果时停用，手动交互会推迟下一次。
+- 情绪耳姿态由 `Motion` 的 `earMood` 驱动：萎靡随现有 droop 信号缓慢下垂，happy 时小幅立高再回到常态。渲染角度基线为下垂约 38° / 兴奋上抬最多 8°，耳根固定，点击与待机扑闪叠加并限幅。
+- 桌宠与控制台预览共用 `src/touch.mjs`；命中检测反算实际变形网格并检查像素透明度，避开呆毛环内空白和被遮住的耳朵。
+- `src/ahoge.mjs` 负责发丝中心线、材质抓点、长度约束与释放回弹；渲染时反算头部投影，避免转头时抓点滑离鼠标。
+- 上述交互从 v0.5.0 起包含在安装包与便携包中；源码运行可使用仓库中的启动脚本或 `npm start`。
+
+```powershell
+node node_modules/electron/cli.js test/touch-window.cjs
+```
+
+此回归使用隐藏 Electron 窗口，验证 150 / 240 / 460 尺寸、贴边 / 悬浮模式、左右耳随机次数、牵拉 / 拉直 / 拉伸、抓点跟随、发根固定、萎靡 / 兴奋耳姿态、待机扑耳及失焦恢复；结果与截图在 `.test-output/touch/`。
 
 ## 4. 重新生成 README 素材
 
@@ -83,7 +99,7 @@ pwsh -File tools/build-release.ps1
 
 ## 6. 发布到 GitHub
 
-正常流程（需要 token 带 `workflow` 权限，用于推 `.github/workflows/`）：
+自动发布工作流合入后的流程（修改 `.github/workflows/` 需要 token 带 `workflow` 权限）：
 
 ```powershell
 git tag v<ver>
@@ -92,6 +108,8 @@ git push origin v<ver>        # 触发 GitHub Actions 构建并发布 Release
 
 或手动发布：建 tag → 在网页上建 Release → 上传上面 5 个文件
 （安装包资产名用 `bluefish-setup-v<ver>.exe`，与 SHA256SUMS 对齐）。
+
+当前使用本地构建 + GitHub CLI 发布：版本写入 package.json 与 package-lock.json → 提交全部源码 → 运行构建脚本 → 验证安装包 → 推送 main 与 tag → 创建并上传草稿 Release → 校验资产 SHA256 后发布为 latest。
 
 **当前状态**：`.github/workflows/portable-release.yml` 的「打 tag 自动发布」改动还留在本地分支
 `pending/ci-workflow-scope`（提交 `7c8ed9e`），因为本机 GitHub token 缺 `workflow` scope 推不上去。
@@ -120,6 +138,7 @@ git push origin main
 
 | 版本 | 提交 | 资产 |
 |---|---|---|
+| v0.5.0 | tag `v0.5.0` | 呆毛牵拉 / 独立折耳 / 待机扑耳 / 情绪耳姿态；便携 zip / 图层次包 / 预览 gif / 安装包 / SHA256SUMS |
 | v0.4.0 | `bf0ad6b` | 便携 zip / 图层次包 / 预览 gif / 安装包 / SHA256SUMS |
 | v0.2.1 | `52e080d` | 旧版（CI 构建，2026-11-03） |
 

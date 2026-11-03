@@ -1,0 +1,82 @@
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const smooth=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
+
+// Transient reactions are independent of idle gestures and never move the native window.
+export class Touch {
+  constructor(random=Math.random){this.random=random;this.reset();}
+  reset(){this.time=0;this.anchor=null;this.target={x:0,y:0,pain:0};this.value={x:0,y:0,pain:0};this.ears={l:null,r:null};this.grab=null;this.idleTime=0;this.scheduleEar();}
+  scheduleEar(){this.nextEarAt=this.idleTime+60+this.random()*60;}
+  startPull(point,grip=null){
+    this.anchor={x:point.x,y:point.y};this.target={x:0,y:0,pain:0};
+    this.grab=grip?.source?{source:{...grip.source},base:grip.curve||null,client:{...point},held:true,releasedAt:0,strength:1}:null;
+    this.scheduleEar();
+  }
+  movePull(point,size){
+    if(!this.anchor||!Number.isFinite(size)||size<=0)return;
+    const x=(point.x-this.anchor.x)/size,y=(point.y-this.anchor.y)/size;
+    if(!Number.isFinite(x)||!Number.isFinite(y))return;
+    if(this.grab)this.grab.client={...point};
+    this.target={x:clamp(x,-.12,.12),y:clamp(y,-.09,.12),pain:clamp((Math.hypot(x,y)-.018)/.14,0,1)};
+  }
+  endPull(){this.anchor=null;this.target={x:0,y:0,pain:0};if(this.grab){this.grab.held=false;this.grab.releasedAt=this.time;}}
+  twitch(side,idle=false){
+    if(side!=='l'&&side!=='r')return;
+    const count=this.random()<.5?1:2;
+    this.ears[side]={at:this.time,count:idle?1:count,amplitude:idle?.38:1,period:idle?.29:.2,idle};
+    if(!idle)this.scheduleEar();return count;
+  }
+  step(dt,reduced=false,idle=true){
+    dt=clamp(Number.isFinite(dt)?dt:0,0,.1);this.time+=dt;
+    if(idle&&!reduced&&!this.anchor){
+      this.idleTime+=dt;
+      if(this.idleTime>=this.nextEarAt&&!this.ears.l&&!this.ears.r){
+        const side=this.random()<.5?'l':'r';this.twitch(side,true);this.scheduleEar();
+      }
+    }
+    if(this.grab&&!this.grab.held){
+      const t=this.time-this.grab.releasedAt;
+      this.grab.strength=reduced?Math.exp(-t*18):Math.exp(-t*11)*(Math.cos(t*17)+.32*Math.sin(t*17));
+      if(t>=.65)this.grab=null;
+    }
+    for(const key of ['x','y','pain']){
+      this.value[key]+=(this.target[key]-this.value[key])*(1-Math.exp(-dt*(this.anchor?36:14)));
+      if(Math.abs(this.target[key]-this.value[key])<.0005)this.value[key]=this.target[key];
+    }
+    const fold=side=>{
+      const ear=this.ears[side];if(!ear)return 0;
+      const elapsed=this.time-ear.at,duration=reduced?.22:ear.count*ear.period;
+      if(elapsed>=duration){this.ears[side]=null;return 0;}
+      if(reduced)return .22*Math.sin(Math.PI*elapsed/duration);
+      const phase=elapsed%ear.period/ear.period;
+      return ear.amplitude*(phase<.25?smooth(phase/.25):phase<.375?1:1-smooth((phase-.375)/.475));
+    };
+    const state={pain:this.value.pain,ahogePullX:this.value.x,ahogePullY:this.value.y,earFoldL:fold('l'),earFoldR:fold('r')};
+    if(this.grab)state.ahogeGrab={...this.grab};return state;
+  }
+}
+
+// A tap on an ear reacts on release; a deliberate drag still moves the pet.
+export class TouchInput {
+  constructor(touch,onDrag=()=>{}){this.touch=touch;this.onDrag=onDrag;this.active=null;}
+  begin(part,point,size,grip=null){
+    if(this.active)return false;
+    this.active={part:part||'body',point:{...point},size};
+    if(part==='ahoge')this.touch.startPull(point,grip);
+    else if(part!=='ear_l'&&part!=='ear_r')this.onDrag(true);
+    return true;
+  }
+  move(point){
+    const active=this.active;if(!active)return;
+    if(active.part==='ahoge')this.touch.movePull(point,active.size);
+    else if(active.part.startsWith('ear_')&&Math.hypot(point.x-active.point.x,point.y-active.point.y)>Math.max(5,active.size*.025)){
+      active.part='body';this.onDrag(true);
+    }
+  }
+  end(cancel=false){
+    const active=this.active;if(!active)return;
+    this.active=null;
+    if(active.part==='ahoge')this.touch.endPull();
+    else if(active.part.startsWith('ear_')){if(!cancel)this.touch.twitch(active.part.slice(-1));}
+    else this.onDrag(false);
+  }
+}
