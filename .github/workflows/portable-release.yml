@@ -1,0 +1,49 @@
+name: Build portable Windows release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install and verify
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/electron/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+      - name: Build launcher
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          & "$env:WINDIR/Microsoft.NET/Framework64/v4.0.30319/csc.exe" /nologo /target:winexe /reference:System.Windows.Forms.dll '/out:dist/蓝色肥鱼.exe' tools/BluefishLauncher.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package tracked source and runtime
+        run: python tools/package_portable.py
+      - name: Upload portable package and checksums to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version=(Get-Content package.json | ConvertFrom-Json).version
+          $tag='v'+$version
+          gh release download $tag --pattern bluefish-png-layers.zip --dir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item docs/taskbar-demo.gif dist/bluefish-taskbar-preview.gif
+          $files=@("dist/bluefish-desktop-$tag-windows-x64.zip",'dist/bluefish-png-layers.zip','dist/bluefish-taskbar-preview.gif')
+          $lines=foreach($file in $files){$hash=Get-FileHash -LiteralPath $file -Algorithm SHA256; $hash.Hash.ToLower()+'  '+(Split-Path $file -Leaf)}
+          $sums="dist/bluefish-$tag-SHA256SUMS.txt"
+          [IO.File]::WriteAllText((Join-Path (Get-Location) $sums),($lines -join "`n")+"`n",[Text.UTF8Encoding]::new($false))
+          gh release upload $tag $files[0] $sums --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
