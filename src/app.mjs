@@ -144,7 +144,7 @@ try{
   let last=performance.now();
   function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
     const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
-    motion.attention.update(dt,{x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,poke:!!touchInput.active});
+    motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,poke:!!touchInput.active});
     motion.step(dt);renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});

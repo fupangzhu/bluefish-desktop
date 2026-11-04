@@ -53,8 +53,9 @@ function layout(){
 const headFraction=()=>(1+(CUT_ART_Y-0.5)*RENDER_Y_SCALE)/2;   // where the cut row sits inside the canvas (0..1)
 function place(out){
   const {W,H,s,docked,ledgeY}=L;
-  if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob;}
-  else{pos.left=(W-s)/2;pos.top=(H-s)/2;}
+  const sleep=motion.current?.sleep||0;
+  if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob+s*.085*sleep;}
+  else{pos.left=(W-s)/2;pos.top=(H-s)/2+s*.025*sleep;}
   canvas.style.transform=`translate(${pos.left}px,${pos.top}px)`;
 }
 function drawHandsFrame(out){
@@ -138,13 +139,13 @@ function frame(now){
     let near=false;if(fresh)near=Math.hypot(pointer.x-cx,pointer.y-cy)<Math.max(NEAR_RATIO*s,NEAR_MIN);
     const follow=state.follow;
     const hx=fresh?(pointer.x-pos.left)/s:.5,hy=fresh?(pointer.y-pos.top)/s:.5;
-    const attention=motion.attention.update(dt,{x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
+    const attention=motion.attention.update(dt,{now:now/1000,reduced:state.reduced,x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
       overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
       hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,poke:pokeFlag||!!touchInput.active});
     const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:attention.attentive||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
     pokeFlag=false;
     motion.override=follow?out.override:null;
-    if(out.gesture)motion.gesture(out.gesture);
+    if(out.gesture&&!attention.rubbing)motion.gesture(out.gesture);
     const cur=motion.step(dt);
     place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
     renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);

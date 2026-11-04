@@ -9,12 +9,12 @@ export function flick(t,ear){
 export function deformEar(x,y,layer,s){
  const side=layer.name==='ear_l'?-1:1,root=layer.pivot,dx=x-root[0],dy=y-root[1];
  const u=clamp(side*dx/((layer.box[2]-layer.box[0])*.55),0,1),weight=u*u*(3-2*u);
- const mood=clamp(s.earMood||0,-1,1),ear=side<0?s.earTwitchL:s.earTwitchR;
+ const sleep=clamp(s.sleep||0,0,1),mood=clamp(s.earMood||0,-1,1),ear=side<0?s.earTwitchL:s.earTwitchR;
  const legacy=clamp((side<0?s.earFoldL:s.earFoldR)||0,0,1);
- let base=38*Math.max(0,-mood)-8*Math.max(0,mood);
+ let base=38*Math.max(0,-mood)-8*Math.max(0,mood)+16*sleep;
  if(!base&&!ear&&!legacy)return [x,y];
  let a=rad(side*base*weight);
- let px=Math.cos(a)*dx-Math.sin(a)*dy,py=Math.sin(a)*dx+Math.cos(a)*dy;
+ let px=Math.cos(a)*dx-Math.sin(a)*dy,py=Math.sin(a)*dx+Math.cos(a)*dy+sleep*(layer.box[2]-layer.box[0])*.035*weight;
  const rootWave=ear?flick(ear.elapsed,ear):legacy;
  const tipWave=ear?flick(ear.elapsed-u*.035,ear):legacy;
  // The initial impulse is small at the base; the flexible distal section follows later.

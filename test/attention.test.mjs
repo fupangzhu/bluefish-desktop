@@ -3,9 +3,10 @@ import {Attention,headContact} from '../src/attention.mjs';
 import {Motion} from '../src/motion.mjs';
 import {Peek} from '../src/peek.mjs';
 const frame=(a,m,dt,p)=>{const v=a.update(dt,p);if(m)m.step(dt);return v;};
+const sleepy=x=>{(x.attention||x).pickReaction=()=> 'sleepy';return x;};
 const point={x:120,y:110,size:240,near:true,overHead:false,hx:0,hy:0};
 test('a stationary nearby pointer loses attention and droops instead of watching forever',()=>{
- const m=new Motion(()=>.5);m.idle=false;m.setGaze(1,0);const a=m.attention,p=new Peek();
+ const m=sleepy(new Motion(()=>.5));m.idle=false;m.setGaze(1,0);const a=m.attention,p=new Peek();
  let s;for(let i=0;i<20*60;i++){s=frame(a,m,1/60,point);p.update(1/60,{near:s.attentive,gx:s.gazeWeight});}
  assert.ok(s.gazeWeight<.001);assert.ok(s.droop>.98);assert.ok(Math.abs(m.current.gx)<.001);assert.ok(m.current.earMood<-.95);
  for(let i=0;i<60*35;i++){s=frame(a,m,1/60,point);p.update(1/60,{near:s.attentive,gx:s.gazeWeight});}assert.equal(p.mode,'sulk');
@@ -15,7 +16,7 @@ test('far moving cursor is ignored; fresh nearby movement restores gaze',()=>{
  for(let i=0;i<90;i++)s=a.update(1/60,{...point,x:120+Math.sin(i*.12)*25});assert.ok(s.gazeWeight>.98);assert.ok(s.attentive);
 });
 test('rubbing settles into closed eyes and restores motion after the departure delay',()=>{
- const m=new Motion(()=>.5);m.idle=false;m.setGaze(.8,0);let early=0;
+ const m=sleepy(new Motion(()=>.5));m.idle=false;m.setGaze(.8,0);let early=0;
  for(let i=0;i<5*60;i++){const x=Math.sin(i/60*5);frame(m.attention,m,1/60,{...point,x:120+x*32,overHead:true,hx:x});if(i<120)early=Math.max(early,Math.abs(m.current.yaw));}
  assert.ok(early>.3&&early<7);assert.ok(m.current.left<.01&&m.current.right<.01);assert.ok(Math.abs(m.current.yaw)<.05);
  for(let i=0;i<6*60;i++)frame(m.attention,m,1/60,{...point,x:230+i,overHead:false});
@@ -26,7 +27,7 @@ test('hover alone, dragging, and hair pulling do not activate a head rub',()=>{
  assert.ok(headContact(120,110,240));assert.equal(headContact(235,90,240),false);assert.equal(headContact(120,12,240),false);
 });
 test('relaxation and release are consistent across frame rates and avatar sizes',()=>{
- const simulate=(fps,size)=>{const a=new Attention();for(let i=0;i<fps*4;i++)a.update(1/fps,{...point,size,x:size*(.5+.14*Math.sin(i/fps*6)),overHead:true});return a.current;};
+ const simulate=(fps,size)=>{const a=sleepy(new Attention());for(let i=0;i<fps*4;i++)a.update(1/fps,{...point,size,x:size*(.5+.14*Math.sin(i/fps*6)),overHead:true});return a.current;};
  const samples=[simulate(30,150),simulate(60,240),simulate(120,460)];for(const s of samples){assert.ok(s.relax>.99&&s.rub>.99&&s.eyeCap<.01);}
 });
 
@@ -36,7 +37,7 @@ test('active manipulation stays alert even outside the nearby zone',()=>{const a
 
 test('departure samples a 2–5 second hold once and keeps both eyes closed until it expires',()=>{
  for(const random of [0,1]){
-  const m=new Motion(()=>random);m.idle=false;
+  const m=sleepy(new Motion(()=>random));m.idle=false;
   for(let i=0;i<300;i++)frame(m.attention,m,1/60,{...point,x:120+30*Math.sin(i*.1),overHead:true});
   frame(m.attention,m,1/60,{...point,x:300,overHead:false});
   const start=m.attention.time,until=m.attention.restUntil,delay=until-start;assert.ok(Math.abs(delay-(2+random*3))<1e-8);
@@ -45,7 +46,7 @@ test('departure samples a 2–5 second hold once and keeps both eyes closed unti
  }
 });
 test('returning to rub reschedules the next departure; manipulation and reset cancel the hold',()=>{
- let count=0;const a=new Attention(()=>{count++;return count===1?.2:.8;});
+ let count=0;const a=sleepy(new Attention(()=>{count++;return count===1?.2:.8;}));
  for(let i=0;i<300;i++)a.update(1/60,{...point,x:120+30*Math.sin(i*.1),overHead:true});
  a.update(1/60,{...point,overHead:false});assert.equal(count,1);const first=a.restUntil;
  a.update(1/60,{...point,overHead:true});assert.equal(a.current.resting,false);assert.ok(a.current.eyeCap<.01);
@@ -57,7 +58,7 @@ test('returning to rub reschedules the next departure; manipulation and reset ca
 
 test('departure keeps gaze turns and taskbar travel still until both eyes finish reopening',()=>{
  for(const fps of [30,60,120]){
-  const m=new Motion(()=>.5),p=new Peek({random:()=>.5});m.idle=false;m.setGaze(.9,0);const dt=1/fps;
+  const m=sleepy(new Motion(()=>.5)),p=new Peek({random:()=>.5});m.idle=false;m.setGaze(.9,0);const dt=1/fps;
   const tick=input=>{const a=m.attention.update(dt,input),out=p.update(dt,{gx:.9,near:true,hold:m.blocksTravel(a)});m.override=out.override;m.step(dt);return out;};
   for(let i=0;i<fps*5;i++)tick({...point,x:120+30*Math.sin(i/fps*5),overHead:true});
   const yaw=m.current.yaw,offset=p.snapshot().offsetX;let openedAt,travelAt,turnedAt;
@@ -72,10 +73,10 @@ test('departure keeps gaze turns and taskbar travel still until both eyes finish
  }
 });
 
-test('long stationary rubs still finish waking, and direct manipulation or reset releases the movement hold',()=>{
- const m=new Motion(()=>.5);m.idle=false;
+test('parked cursors release petting; direct manipulation and reset release the movement hold',()=>{
+ const m=sleepy(new Motion(()=>.5));m.idle=false;
  for(let i=0;i<60*25;i++)frame(m.attention,m,1/60,{...point,x:i<240?120+30*Math.sin(i*.1):120,overHead:true});
- assert.ok(m.wakePending);for(let i=0;i<60*7;i++)frame(m.attention,m,1/60,{...point,x:900,near:false,overHead:false});assert.equal(m.wakePending,false);
+ assert.equal(m.wakePending,false);assert.ok(m.attention.current.droop>.9);for(let i=0;i<60*7;i++)frame(m.attention,m,1/60,{...point,x:900,near:false,overHead:false});assert.equal(m.wakePending,false);
  for(let i=0;i<300;i++)frame(m.attention,m,1/60,{...point,x:120+30*Math.sin(i*.1),overHead:true});assert.ok(m.wakePending);
  frame(m.attention,m,1/60,{...point,overHead:false,blocked:true,poke:true});assert.equal(m.wakePending,false);assert.equal(m.blocksTravel(),false);
  m.wakePending=true;m.reset();assert.equal(m.blocksTravel(),false);

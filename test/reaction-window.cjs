@@ -7,6 +7,7 @@ app.whenReady().then(async()=>{const evidence={};try{
  win=new BrowserWindow({width:420,height:420,show:false,frame:false,transparent:true,webPreferences:{preload,offscreen:true,backgroundThrottling:false,contextIsolation:true,sandbox:true}});const wc=win.webContents,js=s=>wc.executeJavaScript(s);
  await win.loadURL('http://127.0.0.1:'+server.address().port+'/overlay.html');for(let i=0;i<100;i++){if(await js('!!window.bluefish?.renderer'))break;await sleep(100);}
  wc.send('state',{size:400,docked:false,follow:true,idle:false,reduced:false,pose:{yaw:0,pitch:0,roll:0}});await sleep(250);
+ await js("bluefish.motion.attention.pickReaction=()=> 'sleepy'");
  const shot=async name=>fs.writeFileSync(path.join(OUT,name+'.png'),(await wc.capturePage()).toPNG());
  await shot('normal');let early=0;
  for(let i=0;i<88;i++){const t=i*.05;await js(`(()=>{const b=bluefish,p=b.position(),s=b.state.size,x=Math.sin(${t}*5);b.setPointer({x:p.left+s*(.5+x*.12),y:p.top+s*.44,gx:x*.7,gy:0});})()`);await sleep(50);if(i<30)early=Math.max(early,Math.abs(await js('bluefish.motion.current.yaw')));if(i===20)await shot('rubbing');}
