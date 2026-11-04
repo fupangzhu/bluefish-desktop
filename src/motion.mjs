@@ -41,7 +41,7 @@ export function fromPromptSoulSegment(segment,duration=3){
   });
 }
 export class Motion {
-  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.attention=new Attention();this.eyelids=new Eyelids(random);this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
+  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.attention=new Attention(random);this.eyelids=new Eyelids(random);this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
   setGaze(x,y){if(Number.isFinite(x)&&Number.isFinite(y))this.gaze={x:clamp(x,-1,1),y:clamp(y,-1,1)};}
   blink(){this.blinkAt=this.time;this.eyelids.blink(this.time);}
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}

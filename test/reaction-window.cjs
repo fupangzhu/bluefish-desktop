@@ -11,8 +11,13 @@ app.whenReady().then(async()=>{const evidence={};try{
  await shot('normal');let early=0;
  for(let i=0;i<88;i++){const t=i*.05;await js(`(()=>{const b=bluefish,p=b.position(),s=b.state.size,x=Math.sin(${t}*5);b.setPointer({x:p.left+s*(.5+x*.12),y:p.top+s*.44,gx:x*.7,gy:0});})()`);await sleep(50);if(i<30)early=Math.max(early,Math.abs(await js('bluefish.motion.current.yaw')));if(i===20)await shot('rubbing');}
  evidence.rub=await js('({left:bluefish.motion.current.left,yaw:bluefish.motion.current.yaw,relax:bluefish.motion.attention.current.relax})');evidence.rub.earlyYaw=early;await shot('relaxed');assert.ok(evidence.rub.left<.02);assert.ok(evidence.rub.relax>.99);assert.ok(Math.abs(evidence.rub.yaw)<.1);assert.ok(early>.2);
- for(let i=0;i<32;i++){await js(`(()=>{const b=bluefish,p=b.position(),s=b.state.size;b.setPointer({x:p.left+s*(1.0+Math.sin(${i}*.3)*.02),y:p.top+s*.55,gx:.8,gy:0});})()`);await sleep(50);}
- evidence.recovered=await js('({left:bluefish.motion.current.left,yaw:bluefish.motion.current.yaw})');await shot('recovered');assert.ok(evidence.recovered.left>.95&&evidence.recovered.yaw>4);
+ const depart=async i=>{await js(`(()=>{const b=bluefish,p=b.position(),s=b.state.size;b.setPointer({x:p.left+s*(1.0+Math.sin(${i}*.3)*.02),y:p.top+s*.55,gx:.8,gy:0});})()`);await sleep(50);};
+ await depart(0);evidence.departure=await js('({time:bluefish.motion.attention.time,until:bluefish.motion.attention.restUntil,resting:bluefish.motion.attention.current.resting})');
+ const until=evidence.departure.until,remaining=until-evidence.departure.time;assert.ok(evidence.departure.resting&&remaining>=1.8&&remaining<=5);
+ for(let i=1;i<30;i++)await depart(i);
+ evidence.held=await js('({left:bluefish.motion.current.left,right:bluefish.motion.current.right,resting:bluefish.motion.attention.current.resting,until:bluefish.motion.attention.restUntil})');await shot('departure-hold');assert.ok(evidence.held.resting&&evidence.held.left<.02&&evidence.held.right<.02);assert.equal(evidence.held.until,until);
+ for(let i=30;i<250;i++){await depart(i);if(await js('bluefish.motion.attention.time')>until+1.5)break;}
+ evidence.recovered=await js('({left:bluefish.motion.current.left,right:bluefish.motion.current.right,yaw:bluefish.motion.current.yaw,resting:bluefish.motion.attention.current.resting})');await shot('recovered');assert.ok(evidence.recovered.left>.95&&evidence.recovered.right>.95&&evidence.recovered.yaw>4&&!evidence.recovered.resting);
  await js('bluefish.motion.attention.lastNear-=30;bluefish.motion.attention.lastMove-=30');for(let i=0;i<35;i++){await js('bluefish.setPointer({...bluefish.pointer})');await sleep(50);}
  evidence.still=await js('({gx:bluefish.motion.current.gx,droop:bluefish.motion.current.ahogeDroop,weight:bluefish.motion.attention.current.gazeWeight})');await shot('droop');assert.ok(Math.abs(evidence.still.gx)<.08&&evidence.still.droop>.8);
  await js('bluefish.pause();bluefish.motion.reset();bluefish.motion.step(0)');
