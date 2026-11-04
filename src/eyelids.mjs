@@ -5,10 +5,10 @@ function openness(t){if(t<0||t>=.32)return 1;return t<.13?1-Math.sin(t/.13*Math.
 export class Eyelids{
  constructor(random=Math.random){this.random=random;this.reset();}
  reset(){this.blinkAt=-Infinity;this.blinkLead='l';this.blinkLag=0;this.rubLead='l';this.rubLag=0;this.rubbing=false;this.history=[{time:-Infinity,cap:1}];}
- blink(time){this.blinkAt=time;this.blinkLead=this.random()<.5?'l':'r';this.blinkLag=.025+this.random()*.055;}
+ blink(time){this.blinkAt=time;this.blinkLead=this.random()<.5?'l':'r';this.blinkLag=.020+this.random()*.040;}
  sample(time,{rub=0,eyeCap=1}={}){
   const rubbing=rub>.1;
-  if(rubbing&&!this.rubbing){this.rubLead=this.random()<.5?'l':'r';this.rubLag=.12+this.random()*.20;}
+  if(rubbing&&!this.rubbing){this.rubLead=this.random()<.5?'l':'r';this.rubLag=.09+this.random()*.15;}
   this.rubbing=rubbing;
   const cap=Number.isFinite(eyeCap)?clamp(eyeCap):1,last=this.history.at(-1);
   if(last.time===time)last.cap=cap;else this.history.push({time,cap});
