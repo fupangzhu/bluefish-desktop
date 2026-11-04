@@ -132,9 +132,9 @@ for spec in eye_specs:
     lid=Image.new('RGBA',(W,H));d=ImageDraw.Draw(lid)
     pts=[]
     for t in np.linspace(-1,1,61):
-        lx=t*36;ly=9*(1-t*t);pts.append((cx+cs*lx-sn*ly,cy+sn*lx+cs*ly))
-    d.line(pts,fill=(28,119,192,255),width=5,joint='curve')
-    for px,py in [pts[0],pts[-1]]:d.ellipse((px-2,py-2,px+2,py+2),fill=(28,119,192,255))
+        lx=t*36;ly=6.5*(1-t*t);pts.append((cx+cs*lx-sn*ly,cy+sn*lx+cs*ly))
+    d.line(pts,fill=(28,119,192,255),width=7,joint='curve')
+    for px,py in [pts[0],pts[-1]]:d.ellipse((px-3.5,py-3.5,px+3.5,py+3.5),fill=(28,119,192,255))
     layers['eye_'+side+'_closed']=np.array(lid)
 
 master=Image.fromarray(a).resize((2048,2048),Image.Resampling.LANCZOS)
