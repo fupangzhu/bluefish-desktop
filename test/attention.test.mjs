@@ -53,3 +53,30 @@ test('returning to rub reschedules the next departure; manipulation and reset ca
  a.update(1/60,{...point,overHead:false,blocked:true,poke:true});assert.equal(a.current.resting,false);assert.equal(a.restUntil,0);
  a.reset();assert.equal(a.restUntil,0);assert.equal(a.current.eyeCap,1);
 });
+
+
+test('departure keeps gaze turns and taskbar travel still until both eyes finish reopening',()=>{
+ for(const fps of [30,60,120]){
+  const m=new Motion(()=>.5),p=new Peek({random:()=>.5});m.idle=false;m.setGaze(.9,0);const dt=1/fps;
+  const tick=input=>{const a=m.attention.update(dt,input),out=p.update(dt,{gx:.9,near:true,hold:m.blocksTravel(a)});m.override=out.override;m.step(dt);return out;};
+  for(let i=0;i<fps*5;i++)tick({...point,x:120+30*Math.sin(i/fps*5),overHead:true});
+  const yaw=m.current.yaw,offset=p.snapshot().offsetX;let openedAt,travelAt,turnedAt;
+  for(let i=0;i<fps*7;i++){
+   const out=tick({...point,x:300+i,overHead:false});
+   if(m.current.left===1&&m.current.right===1&&openedAt===undefined)openedAt=i;
+   if(openedAt===undefined){assert.equal(m.current.yaw,yaw);assert.equal(out.offsetX,offset);assert.equal(p.step,null);}
+   if(p.step&&travelAt===undefined)travelAt=i;
+   if(Math.abs(m.current.yaw-yaw)>.001&&turnedAt===undefined)turnedAt=i;
+  }
+  assert.ok(openedAt>fps*3.5);assert.ok(travelAt>openedAt);assert.ok(turnedAt-openedAt>=fps*.08);assert.ok(m.current.yaw>5);assert.ok(p.snapshot().offsetX>offset);
+ }
+});
+
+test('long stationary rubs still finish waking, and direct manipulation or reset releases the movement hold',()=>{
+ const m=new Motion(()=>.5);m.idle=false;
+ for(let i=0;i<60*25;i++)frame(m.attention,m,1/60,{...point,x:i<240?120+30*Math.sin(i*.1):120,overHead:true});
+ assert.ok(m.wakePending);for(let i=0;i<60*7;i++)frame(m.attention,m,1/60,{...point,x:900,near:false,overHead:false});assert.equal(m.wakePending,false);
+ for(let i=0;i<300;i++)frame(m.attention,m,1/60,{...point,x:120+30*Math.sin(i*.1),overHead:true});assert.ok(m.wakePending);
+ frame(m.attention,m,1/60,{...point,overHead:false,blocked:true,poke:true});assert.equal(m.wakePending,false);assert.equal(m.blocksTravel(),false);
+ m.wakePending=true;m.reset();assert.equal(m.blocksTravel(),false);
+});

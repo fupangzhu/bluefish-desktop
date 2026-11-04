@@ -141,7 +141,7 @@ function frame(now){
     const attention=motion.attention.update(dt,{x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
       overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
       hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,poke:pokeFlag||!!touchInput.active});
-    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:attention.attentive||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced});
+    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:attention.attentive||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
     pokeFlag=false;
     motion.override=follow?out.override:null;
     if(out.gesture)motion.gesture(out.gesture);

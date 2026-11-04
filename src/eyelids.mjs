@@ -1,14 +1,17 @@
 const clamp=n=>Math.max(0,Math.min(1,n));
 function openness(t){if(t<0||t>=.32)return 1;return t<.13?1-Math.sin(t/.13*Math.PI/2):Math.sin((t-.13)/.19*Math.PI/2);}
-// Randomize once per closure, never per frame. Small delays retain a single
-// natural blink; the slower petting closure has a more visible left/right lead.
+// Most closures are synchronous. Choose a subtle stagger once per event.
 export class Eyelids{
  constructor(random=Math.random){this.random=random;this.reset();}
  reset(){this.blinkAt=-Infinity;this.blinkLead='l';this.blinkLag=0;this.rubLead='l';this.rubLag=0;this.rubbing=false;this.history=[{time:-Infinity,cap:1}];}
- blink(time){this.blinkAt=time;this.blinkLead=this.random()<.5?'l':'r';this.blinkLag=.020+this.random()*.040;}
+ timing(min,max){
+  if(this.random()<.8)return {lead:'l',lag:0};
+  return {lead:this.random()<.5?'l':'r',lag:min+this.random()*(max-min)};
+ }
+ blink(time){const {lead,lag}=this.timing(.010,.025);this.blinkAt=time;this.blinkLead=lead;this.blinkLag=lag;}
  sample(time,{rub=0,eyeCap=1}={}){
   const rubbing=rub>.1;
-  if(rubbing&&!this.rubbing){this.rubLead=this.random()<.5?'l':'r';this.rubLag=.09+this.random()*.15;}
+  if(rubbing&&!this.rubbing){const {lead,lag}=this.timing(.025,.065);this.rubLead=lead;this.rubLag=lag;}
   this.rubbing=rubbing;
   const cap=Number.isFinite(eyeCap)?clamp(eyeCap):1,last=this.history.at(-1);
   if(last.time===time)last.cap=cap;else this.history.push({time,cap});

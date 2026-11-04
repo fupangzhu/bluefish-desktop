@@ -41,17 +41,28 @@ export function fromPromptSoulSegment(segment,duration=3){
   });
 }
 export class Motion {
-  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.attention=new Attention(random);this.eyelids=new Eyelids(random);this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
+  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.attention=new Attention(random);this.eyelids=new Eyelids(random);this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.wakePending=false;this.wakeReadyAt=null;this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
   setGaze(x,y){if(Number.isFinite(x)&&Number.isFinite(y))this.gaze={x:clamp(x,-1,1),y:clamp(y,-1,1)};}
   blink(){this.blinkAt=this.time;this.eyelids.blink(this.time);}
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}
   playCue(cue,delay=0){const c=validateCue(cue);if(!Number.isFinite(delay)||delay<0||delay>30)throw Error('无效延迟');this.queue=this.queue.filter(q=>q.end>this.time);if(this.queue.length>=24)throw Error('动作队列已满');this.queue.push({...c,start:this.time+delay,end:this.time+delay+c.duration});}
-  reset(){this.queue=[];this.touch.reset();this.attention.reset();this.eyelids.reset();this.springs.ears.value=0;this.springs.ears.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
+  reset(){this.queue=[];this.touch.reset();this.attention.reset();this.wakePending=false;this.wakeReadyAt=null;this.eyelids.reset();this.springs.ears.value=0;this.springs.ears.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
+  blocksTravel(attention=this.attention.current){return !attention.interacting&&!!(attention.rubbing||attention.resting||this.wakePending);}
   step(dt){
     this.time+=clamp(dt,0,0.1);const t=this.time,touch=this.touch.step(dt,this.reduced,this.idle);
     if(this.idle&&!this.reduced&&t>=this.nextBlink){this.blink();this.nextBlink=t+3.2+this.random()*4;}
     const attention=this.attention.current,pet=attention.rub||0;
     const lids=this.eyelids.sample(t,attention);
+    // Finish reopening both eyes before resuming gaze turns or taskbar travel.
+    if(attention.interacting){this.wakePending=false;this.wakeReadyAt=null;}
+    else if(attention.rubbing||attention.resting){this.wakePending=true;this.wakeReadyAt=null;}
+    else if(this.wakePending){
+      if(!attention.relax&&lids.left>=attention.eyeCap-1e-6&&lids.right>=attention.eyeCap-1e-6){
+        this.wakeReadyAt??=t;
+        if(t-this.wakeReadyAt>=.1){this.wakePending=false;this.wakeReadyAt=null;}
+      }else this.wakeReadyAt=null;
+    }
+    const waking=this.wakePending&&!attention.rubbing;
     const ov=this.override,ovGaze=ov&&ov.gx!==undefined,gx=ovGaze?clamp(ov.gx||0,-1,1):this.follow?this.gaze.x*(this.attention.time>0?attention.gazeWeight:1):0,gy=ovGaze?clamp(ov.gy||0,-1,1):this.follow?this.gaze.y*(this.attention.time>0?attention.gazeWeight:1):0;   // an override without gx (e.g. only droop) keeps normal gaze
     const target={yaw:this.pose.yaw+gx*14,pitch:this.pose.pitch-gy*8-touch.pain*3,roll:this.pose.roll+gx*2.5+touch.ahogePullX*15};
     if(ov){target.yaw+=ov.yaw||0;target.roll+=ov.roll||0;}
@@ -73,8 +84,11 @@ export class Motion {
     if(p.ParamAngleX<0)p.ParamAngleX=-YAW_LEFT*Math.tanh(-p.ParamAngleX/YAW_LEFT);
     for(const [k,[lo,hi]] of Object.entries(PARAMETERS))p[k]=clamp(p[k],lo,hi);
     if(ov&&Number.isFinite(ov.eyeCap)){p.ParamEyeLOpen=Math.min(p.ParamEyeLOpen,ov.eyeCap);p.ParamEyeROpen=Math.min(p.ParamEyeROpen,ov.eyeCap);}
-    const ease=(k,v)=>this.reduced?(this.springs[k].value=v):this.springs[k].step(v,dt);
+    const ease=(k,v)=>{
+      if(waking&&(k==='yaw'||k==='pitch'||k==='roll'||k==='hair')){this.springs[k].velocity=0;return this.springs[k].value;}
+      return this.reduced?(this.springs[k].value=v):this.springs[k].step(v,dt);
+    };
     if(this.gestureName==='wink'&&gt>=0&&gt<.6)p.ParamEyeLOpen*=Math.abs(Math.cos(gt/.6*Math.PI));
-    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),rub:pet,relax:attention.relax||0,time:t,secondary:this.idle&&!this.reduced,breath:this.idle&&!this.reduced?Math.sin(t*1.6)*.0018:0,...touch};
+    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),rub:pet,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced,breath:this.idle&&!this.reduced?Math.sin(t*1.6)*.0018:0,...touch};
   }
 }

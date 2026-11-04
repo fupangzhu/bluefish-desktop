@@ -4,7 +4,7 @@ const smooth=n=>{n=clamp(n,0,1);return n*n*(3-2*n);};
 // Coordinates are local CSS pixels; movement is measured before head deformation.
 export class Attention{
  constructor(random=Math.random){this.random=random;this.reset();}
- reset(){this.time=0;this.last=null;this.lastMove=-100;this.lastNear=0;this.rubAge=0;this.rubMix=0;this.restUntil=0;this.wasStroking=false;this.gazeWeight=0;this.droop=0;this.swayX=0;this.swayY=0;this.current={gazeWeight:0,rub:0,relax:0,eyeCap:1,droop:0,yaw:0,roll:0,attentive:false,rubbing:false,resting:false};}
+ reset(){this.time=0;this.last=null;this.lastMove=-100;this.lastNear=0;this.rubAge=0;this.rubMix=0;this.restUntil=0;this.wasStroking=false;this.gazeWeight=0;this.droop=0;this.swayX=0;this.swayY=0;this.current={gazeWeight:0,rub:0,relax:0,eyeCap:1,droop:0,yaw:0,roll:0,attentive:false,rubbing:false,resting:false,interacting:false};}
  update(dt,input={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.1);this.time+=dt;
   const size=Math.max(1,input.size||240),valid=Number.isFinite(input.x)&&Number.isFinite(input.y),near=valid&&!!input.near;
@@ -35,7 +35,7 @@ export class Attention{
   this.swayX=blend(this.swayX,clamp(input.hx||0,-1,1),3.2);this.swayY=blend(this.swayY,clamp(input.hy||0,-1,1),3.2);
   return this.current={gazeWeight:this.gazeWeight,rub:this.rubMix,relax,eyeCap:Math.min(1-relax*this.rubMix,1-.32*this.droop),droop:this.droop,
    yaw:this.swayX*6*(1-relax),roll:this.swayX*2.4*(1-relax),pitch:-this.swayY*2*(1-relax),
-   attentive:near&&(this.time-this.lastMove<ATTENTION.nearGrace||rubbing),rubbing,resting};
+   attentive:near&&(this.time-this.lastMove<ATTENTION.nearGrace||rubbing),rubbing,resting,interacting:!!input.blocked||!!input.poke};
  }
 }
 // Excludes the ahoge/ears, while admitting a little space around the scalp.

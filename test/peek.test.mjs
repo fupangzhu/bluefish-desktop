@@ -95,3 +95,20 @@ test('hands idle micro-motion: independent squeeze, occasional taps (injectable 
   const oa=run(a,3.1,watching),ob=run(b,3.1,watching);assert.deepEqual(oa.hands,ob.hands);assert.notEqual(oa.hands[0].squeeze,oa.hands[1].squeeze);
   const q=new Peek({size:240,random:()=>0});run(q,30,{...watching,reduced:true},o=>o.hands.forEach(h=>assert.ok(h.tap===0&&h.tapSquash===0&&h.squeeze===0)));
 });
+
+
+test('a held step freezes hands and head, then resumes without a jump',()=>{
+ const p=new Peek({random:()=>.5});p.forceStep(1);p.update(.18,watching);const before=p.snapshot(),phase=p.step.t;
+ const held=run(p,6,{...watching,gx:1,hold:true});assert.equal(p.step.t,phase);assert.equal(held.offsetX,before.offsetX);assert.equal(held.roll,before.roll);assert.equal(held.bob,before.bob);assert.deepEqual(held.hands,before.hands);assert.ok(held.held);
+ p.update(.01,{...watching,gx:1});assert.ok(p.step.t>phase);assert.ok(Math.abs(p.snapshot().offsetX-held.offsetX)<1);run(p,1,watching);assert.equal(p.step,null);
+});
+
+test('holding resets the gaze timer instead of queuing a step behind closed eyes',()=>{
+ const p=new Peek();run(p,.6,{...watching,gx:1});run(p,5,{...watching,gx:1,hold:true});assert.equal(p.step,null);assert.equal(p.gazeTimer,0);
+ run(p,.5,{...watching,gx:1});assert.equal(p.step,null);run(p,.3,{...watching,gx:1});assert.ok(p.step);
+});
+
+
+test('petting can cheer up a sulking pet while travel remains paused',()=>{
+ const p=new Peek();p.forceSulk();let happy=0;run(p,1,{...watching,hold:true},out=>{if(out.gesture==='happy')happy++;assert.equal(out.offsetX,0);assert.ok(out.held);});assert.equal(happy,1);assert.equal(p.mode,'rest');assert.equal(p.step,null);
+});

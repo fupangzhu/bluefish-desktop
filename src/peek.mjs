@@ -65,7 +65,7 @@ export class Peek{
     this.lastStepEnd=-100;
     this.gazeDir=0;this.gazeTimer=0;
     this.nearTimer=0;this.away=1;this.reducedSnap=false;
-    this.returnT=0;this.reducedNow=false;
+    this.returnT=0;this.reducedNow=false;this.held=false;
     // idle micro-motion of each hand (independent): squeeze phase + occasional tap. tapT<0 = no tap running.
     this.idle=[0,1].map(i=>({phase:i*1.9,tapT:-1,nextTap:this.cfg.tapEvery[0]+this.random()*(this.cfg.tapEvery[1]-this.cfg.tapEvery[0])}));
   }
@@ -97,6 +97,16 @@ export class Peek{
     const ignored=this.time-this.lastAttention>=c.ignoreAfter;
     if(!docked){ // free mode: no shuffling, hands are not drawn
       this.step=null;this.committed=0;this.headTarget=0;if(this.mode==='returning'||this.mode==='stepping')this.mode='rest';
+    }
+    // Pause the whole step, including hands and the head spring, until eyes reopen.
+    this.held=!!input.hold;
+    if(this.held){
+      this.gazeDir=0;this.gazeTimer=0;
+      if(this.mode==='sulk'){
+        this.nearTimer=near?this.nearTimer+dt:0;
+        if(poke||this.nearTimer>=c.sulkExitNear){this.mode='rest';this.nearTimer=0;this.lastAttention=this.time;return 'happy';}
+      }
+      return;
     }
     // advance an ongoing step
     if(this.step){
@@ -167,6 +177,6 @@ export class Peek{
       const a=this.away;
       override={gx:a*c.sulkGx,gy:c.sulkGy,yaw:a*c.sulkYaw,roll:a*c.sulkRoll,eyeCap:c.eyeCap,droop:1};
     }else if(this.mode==='returning')override={droop:c.returnDroopFrom+(c.returnDroopTo-c.returnDroopFrom)*clamp(this.returnT/c.returnDroopRamp,0,1)};
-    return {offsetX:this.head.value*s,hands,override,mode:this.mode,roll,bob};
+    return {offsetX:this.head.value*s,hands,override,mode:this.mode,roll,bob,held:this.held};
   }
 }
