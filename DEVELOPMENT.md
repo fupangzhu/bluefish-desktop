@@ -4,12 +4,14 @@
 
 ## 1. 位置
 
+以下路径均相对于克隆后的仓库：
+
 | 内容 | 路径 |
-|---|---|
-| 项目仓库（git） | `D:\AI coding project\Claude Make\bluefish-desktop` |
-| 可分享产物（安装包等） | `D:\AI coding project\Claude Make\release` |
-| 旧版手工备份（历史） | `D:\AI coding project\Claude Make\bluefish-desktop.bak-20261103` |
-| 应用安装位置（用户机器） | `%LOCALAPPDATA%\BluefishDesktop`（由安装包创建） |
+| :--- | :--- |
+| 源码与资源 | 仓库根目录 |
+| Windows 发布产物 | `dist/` |
+| README 原始抓帧 | `tools/docs/.work/readme-v2/` |
+| 应用安装目录 | `%LOCALAPPDATA%\BluefishDesktop` |
 
 仓库内关键位置：
 
@@ -23,14 +25,14 @@ tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 57 项）+ Electron 交互回归
+test/           node --test 单测（当前 97 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
 
 - Windows 10/11 x64
-- Node 22+（本机 v24.22.1），`node_modules` 已安装（Electron 45.2.1）
-- Python 3.10+（本机可用 DSH 自带运行时），需要 `pillow`、`numpy`（仅出图用）
+- Node 22+，`node_modules` 已安装（Electron 45.2.1）
+- Python 3.10+，需要 `pillow`（出图用；历史合成脚本另需 `numpy`）
 - .NET Framework 4.x 的 `csc.exe`（Windows 自带，用于编译启动器/安装器）
 - git（`tools/package_portable.py` 用 `git ls-files` 决定打包内容）
 - 首次准备：`npm ci`，然后 `npm test` 确认环境正常
@@ -40,7 +42,7 @@ test/           node --test 单测（当前 57 项）+ Electron 交互回归
 ```powershell
 npm start          # 启动桌面宠物（Electron）
 npm run preview    # 浏览器预览控制台 http://127.0.0.1:8766
-npm test           # node --test，57 项逻辑测试
+npm test           # node --test，逻辑测试
 ```
 
 调试快捷键：`Ctrl+Shift+F10` 显示/隐藏　`Ctrl+Shift+F11` 回到原位。
@@ -66,9 +68,8 @@ node node_modules/electron/cli.js test/touch-window.cjs
 见 [`tools/docs/README.md`](tools/docs/README.md)。简版：
 
 ```powershell
-node node_modules/electron/cli.js tools/docs/capture.cjs   # 抓帧
-python tools/docs/compose.py                               # 合成
-python tools/docs/compose.py --install                     # 写入 docs/
+node node_modules/electron/cli.js tools/docs/capture-readme.cjs  # 真实界面抓帧
+python tools/docs/compose-readme.py --install                   # 统一排版并写入 docs/
 ```
 
 ## 5. 构建发布产物

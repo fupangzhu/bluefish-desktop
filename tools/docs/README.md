@@ -1,55 +1,27 @@
-# docs 素材生成
+# README 素材生成
 
-`docs/` 里的 README 图片全部由本目录的两个脚本从**真实运行的应用**里生成，不是手绘：
+首页媒体来自真实运行的角色与界面，统一使用 800px 展示宽度、中性背景、32px 内边距和相同的任务栏基线。PNG 以双倍分辨率保存，GIF 使用共享调色板以减少闪色。
 
-| 文件 | 作用 |
-|---|---|
-| `capture.cjs` | Electron 抓取脚本：自己起一个静态服务（注入透明背景 CSS），用隐藏窗口加载 `overlay.html` / `menu.html` / `index.html`，通过 `window.bluefish` 接口驱动指针、闹脾气、点击，逐帧 `capturePage()` 截图 |
-| `compose.py` | Pillow 合成：画浅色渐变背景、任务栏图标与时钟、标题、光标，把抓到的帧/静帧拼成 `hero.gif`、`moods.gif`、`sizes.png`、`menu.png`、`console.png`（GIF 用有序抖动避免渐变断层） |
+## 重新生成
 
-## 依赖
-
-- Node 22+，仓库里已 `npm ci`（Electron 45）
-- Python 3.10+，`pillow`、`numpy`
-- Windows 自带字体：`msyh.ttc` / `msyhbd.ttc` / `segoeui.ttf`（脚本里写死了 `C:\Windows\Fonts`）
-- 不需要联网
-
-## 用法
-
-在仓库根目录执行：
+需要仓库的 Electron 依赖、Python 3.10+ 和 Pillow，以及 Windows 自带的微软雅黑字体。
 
 ```powershell
-# 1. 抓帧/截图（全部 5 组，约 2-3 分钟）
-node node_modules/electron/cli.js tools/docs/capture.cjs
-
-# 也可以只抓某一组：hero / moods / sizes / menu / console
-node node_modules/electron/cli.js tools/docs/capture.cjs --only=sizes
-
-# console 需要非 2x 缩放才能完整截到窗口（默认 2x 会被屏幕尺寸裁切）
-$env:CAP_DPR = "1.5"
-node node_modules/electron/cli.js tools/docs/capture.cjs --only=console
-Remove-Item Env:CAP_DPR
-
-# 2. 合成（输出到 tools/docs/.work/build）
-python tools/docs/compose.py
-
-# 3. 确认效果后写进 docs/
-python tools/docs/compose.py --install
+node node_modules/electron/cli.js tools/docs/capture-readme.cjs
+python tools/docs/compose-readme.py --install
 ```
 
-> 如果 shell 里存在 `ELECTRON_RUN_AS_NODE=1`，先 `Remove-Item Env:ELECTRON_RUN_AS_NODE`（或 `unset`），
-> 否则 `electron.exe` 会当成普通 node 运行。
+抓帧和合成中间文件保存在 `tools/docs/.work/readme-v2/`，已被 Git 忽略。脚本使用独立的隐藏窗口与配置目录，不修改正在运行的桌宠。
 
-## 输出
+| 文件 | 内容 |
+| :--- | :--- |
+| `docs/hero.gif` | 鼠标跟随与任务栏挪动 |
+| `docs/petting.gif` | 三种揉头反应，相同画布并排展示 |
+| `docs/sleep.png` | 萎靡与趴睡姿势，相同任务栏高度 |
+| `docs/sizes.png` | 150 / 240 / 460 按真实比例展示 |
+| `docs/menu.png` | 角色和右键菜单 |
+| `docs/console.png` | 完整控制台预览与调节区 |
 
-- `tools/docs/.work/shots/`：原始帧（`frames/hero`、`frames/moods`、`stills/`）
-- `tools/docs/.work/build/`：最终 5 个文件
-- 两个目录都在 `.gitignore` 里；改完样式/帧内容后重新跑即可
+`capture-readme.cjs` 控制真实应用并逐帧截图；`compose-readme.py` 负责标题、背景、边距和基线。演示中的揉头分支及入睡时机由抓帧脚本指定，产品中的随机概率保持不变。
 
-## 几个已知坑
-
-- **隐藏窗口的 DOM 不重绘**：菜单/控制台必须靠「加载时注入 CSS」+「禁用 CSS 动画」拿到正确首帧；控制台的 WebGL 画面要用一个 2D canvas 镜像每帧，否则截到空白。
-- **`capturePage()` 尺寸**：窗口是 `useContentSize` + `--force-device-scale-factor=2`，抓到的 PNG 是 CSS 像素的 2 倍；动画帧固定缩回 800×392 再合成。
-- **GIF 循环**：`hero` 用自适应状态机驱动（等 `peek.offset` 到 ±0.12 再反向），保证结尾回到起始位置、循环不跳。
-- **光标**：应用窗口本身不画鼠标指针，GIF 里的箭头是按录制的指针坐标在合成阶段叠加的。
-- **改文案**：标题/副标题在 `compose.py` 的 `build_gif(...)` 调用里；任务栏图标与时钟在 `draw_taskbar` / `draw_icon`。
+旧版 `capture.cjs` / `compose.py` 仍可复现历史演示；首页更新请使用上面的新脚本。
