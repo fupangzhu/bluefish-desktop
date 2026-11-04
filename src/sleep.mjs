@@ -4,11 +4,13 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 // idleFor is wall time supplied by Attention; pose easing uses bounded frame time.
 export class Sleep{
  constructor(random=Math.random){this.random=random;this.reset();}
- reset(){this.time=0;this.deadline=null;this.sleeping=false;this.closure=0;this.depth=0;this.openAt=null;this.current={sleeping:false,closure:0,depth:0};}
- update(dt,{idleFor=0,active=false,eligible=true,reduced=false}={}){
+ reset(){this.wakeId=0;this.time=0;this.deadline=null;this.sleeping=false;this.closure=0;this.depth=0;this.openAt=null;this.current={sleeping:false,closure:0,depth:0,wakeId:0,woke:false};}
+ update(dt,{idleFor=0,active=false,wake=false,eligible=true,reduced=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.1);this.time+=dt;
-  if(active){this.deadline=null;if(this.sleeping){this.sleeping=false;this.openAt=null;}}
-  else if(eligible){
+  const woke=!!wake&&this.sleeping;
+  if(wake){this.deadline=null;if(woke){this.sleeping=false;this.openAt=null;this.wakeId++;}}
+  else if(active&&!this.sleeping)this.deadline=null;
+  else if(!this.sleeping&&eligible){
    if(idleFor>=SLEEP.earliest&&this.deadline===null){
     const draw=clamp(this.random(),0,1);
     this.deadline=SLEEP.earliest+(SLEEP.latest-SLEEP.earliest)*Math.max(0,(draw-SLEEP.chanceAtStart)/(1-SLEEP.chanceAtStart));
@@ -24,6 +26,6 @@ export class Sleep{
    if(this.time-this.openAt>=.1)this.depth=reduced?0:ease(this.depth,0,2.4);
   }else this.openAt=null;
   if(this.depth<.001)this.depth=0;else if(this.depth>.999)this.depth=1;
-  return this.current={sleeping:this.sleeping,closure:this.closure,depth:this.depth};
+  return this.current={sleeping:this.sleeping,closure:this.closure,depth:this.depth,wakeId:this.wakeId,woke};
  }
 }

@@ -34,7 +34,7 @@ motion.reduced=state.reduced;
 let L={W:0,H:0,s:0,docked:true,grip:0,ledgeY:0,dpr:1};   // layout
 let pos={left:0,top:0};                                    // current head canvas position (window px)
 let skin=makeSkin();
-let pointer=null,pointerAt=-1e9,pokeFlag=false,paused=false,lastHit=null,renderer=null,rig=null;
+let pointer=null,pointerAt=-1e9,pokeFlag=false,wakeFlag=false,paused=false,lastHit=null,renderer=null,rig=null;
 let lastPose={yaw:0,pitch:0,roll:0},lastMainFollow;
 let activePointer=null;
 const touchInput=new TouchInput(motion.touch,on=>pet?.drag(on));
@@ -102,6 +102,7 @@ function onDown(e){
   if(e.button!==0||activePointer!==null||!hitTest(e.clientX,e.clientY))return;
   activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
+  if(motion.attention.current.sleeping){wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
   const part=partAt(e.clientX,e.clientY);
   const grip=part==='ahoge'?renderer.pickHit(e.clientX-pos.left,e.clientY-pos.top):null;
   touchInput.begin(part,{x:e.clientX,y:e.clientY},L.s,grip);
@@ -141,11 +142,11 @@ function frame(now){
     const hx=fresh?(pointer.x-pos.left)/s:.5,hy=fresh?(pointer.y-pos.top)/s:.5;
     const attention=motion.attention.update(dt,{now:now/1000,reduced:state.reduced,x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
       overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
-      hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,poke:pokeFlag||!!touchInput.active});
-    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:attention.attentive||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
-    pokeFlag=false;
+      hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:pokeFlag||!!touchInput.active});
+    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:!attention.sleeping&&(attention.attentive||!follow),poke:!attention.sleeping&&(pokeFlag||!!touchInput.active),docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
+    pokeFlag=false;wakeFlag=false;
     motion.override=follow?out.override:null;
-    if(out.gesture&&!attention.rubbing)motion.gesture(out.gesture);
+    if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active)motion.gesture(out.gesture);
     const cur=motion.step(dt);
     place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
     renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);

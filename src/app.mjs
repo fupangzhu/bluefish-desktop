@@ -90,7 +90,7 @@ $('#advToggle').addEventListener('click',()=>{
 new ResizeObserver(()=>{const r=stage.getBoundingClientRect(),side=Math.max(120,Math.floor(Math.min(r.width,r.height)-24));const px=Math.min(side,640)+'px';canvas.style.width=canvas.style.height=px;const m=$('#masterCompare');if(m)m.style.width=m.style.height=px;}).observe(stage);
 
 /* Preview gaze: only while the cursor is over the stage. */
-let attentionPointer=null;
+let attentionPointer=null,wakeFlag=false;
 function gaze(x,y){attentionPointer={x,y};const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
 stage.addEventListener('pointermove',e=>gaze(e.clientX,e.clientY));
 stage.addEventListener('pointerleave',()=>{attentionPointer=null;motion.setGaze(0,0);});
@@ -102,6 +102,7 @@ canvas.addEventListener('pointerdown',e=>{
   if(e.button!==0||touchPointer!==null||!renderer)return;
   const p=canvasPoint(e);if(!renderer.hitTest(p.x,p.y))return;
   touchPointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
+  if(motion.attention.current.sleeping){wakeFlag=true;return;}
   const hit=renderer.pickHit(p.x,p.y),part=hit?.part;
   touchInput.begin(part,{x:e.clientX,y:e.clientY},canvas.clientWidth,hit);
   if(!part)motion.blink();canvas.style.cursor=part==='ahoge'?'grabbing':'';
@@ -144,8 +145,8 @@ try{
   let last=performance.now();
   function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
     const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
-    motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,poke:!!touchInput.active});
-    motion.step(dt);renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
+    motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:!!touchInput.active});
+    wakeFlag=false;motion.step(dt);renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());

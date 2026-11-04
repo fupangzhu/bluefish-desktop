@@ -10,7 +10,7 @@ export class Attention{
   this.time=0;this.last=null;this.lastMove=-100;this.lastNear=0;this.rubAge=0;this.rubMix=0;
   this.restUntil=0;this.wasStroking=false;this.reaction=null;this.reactionTime=0;this.lastRubAt=-Infinity;this.releaseClosure=0;
   this.gazeWeight=0;this.droop=0;this.swayX=0;this.swayY=0;
-  this.current={gazeWeight:0,rub:0,relax:0,eyeCap:1,droop:0,yaw:0,roll:0,pitch:0,ahogeWag:0,reaction:null,sleep:0,sleepClosure:0,sleeping:false,inactiveFor:0,attentive:false,rubbing:false,resting:false,interacting:false};
+  this.current={gazeWeight:0,rub:0,relax:0,eyeCap:1,droop:0,yaw:0,roll:0,pitch:0,ahogeWag:0,reaction:null,sleep:0,sleepClosure:0,sleeping:false,wakeId:0,woke:false,inactiveFor:0,attentive:false,rubbing:false,resting:false,interacting:false};
  }
  pickReaction(){const draw=this.random();return draw<.2?'sleepy':draw<.7?'playful':'subtle';}
  update(dt,input={}){
@@ -22,7 +22,7 @@ export class Attention{
   if(valid)this.last={x:input.x,y:input.y};else this.last=null;
   if(moved){this.lastMove=this.time;if(near)this.lastNear=this.time;}
   if(input.poke){this.lastNear=this.lastMove=this.time;}
-  const stroking=valid&&input.overHead&&!input.blocked;
+  const stroking=valid&&input.overHead&&!input.blocked&&!this.sleepController.sleeping&&this.sleepController.depth<.05;
   // Only the sleepy reaction retains closed eyes after departure.
   if(input.blocked||input.poke)this.restUntil=0;
   else if(stroking)this.restUntil=0;
@@ -65,13 +65,13 @@ export class Attention{
    roll=(this.swayX*.4+Math.sin(phase*.65+.4)*.5)*activity;
    pitch=(-this.swayY*.4+Math.sin(phase*.5)*.3)*activity;
   }
-  const active=!!input.poke||!!input.blocked||(moved&&near);
+  const active=!!input.wake||!!input.poke||!!input.blocked||(moved&&near);
   if(active)this.lastInteraction=this.idleTime;
   const inactiveFor=this.idleTime-this.lastInteraction;
-  const sleep=this.sleepController.update(dt,{idleFor:inactiveFor,active,eligible:(this.droop>.9&&!rubbing&&!resting)||inactiveFor>=120,reduced:!!input.reduced});
-  return this.current={sleep:sleep.depth,sleepClosure:sleep.closure,sleeping:sleep.sleeping,inactiveFor,gazeWeight:this.gazeWeight,rub:this.rubMix,relax,eyeCap:Math.min(1-relax*this.rubMix,!sleep.sleeping&&sleep.depth>0?1:1-.32*this.droop,1-sleep.closure),droop:this.droop,
+  const sleep=this.sleepController.update(dt,{idleFor:inactiveFor,active,wake:!!input.wake,eligible:(this.droop>.9&&!rubbing&&!resting)||inactiveFor>=120,reduced:!!input.reduced});
+  return this.current={sleep:sleep.depth,sleepClosure:sleep.closure,sleeping:sleep.sleeping,wakeId:sleep.wakeId,woke:sleep.woke,inactiveFor,gazeWeight:this.gazeWeight,rub:this.rubMix,relax,eyeCap:Math.min(1-relax*this.rubMix,!sleep.sleeping&&sleep.depth>0?1:1-.32*this.droop,1-sleep.closure),droop:this.droop,
    yaw,roll,pitch,ahogeWag,reaction:this.reaction,
-   attentive:near&&(this.time-this.lastMove<ATTENTION.nearGrace||rubbing),rubbing,resting,interacting:!!input.blocked||!!input.poke};
+   attentive:!sleep.sleeping&&near&&(this.time-this.lastMove<ATTENTION.nearGrace||rubbing),rubbing,resting,interacting:!!input.blocked||!!input.poke};
  }
 }
 // Excludes the ahoge/ears, while admitting a little space around the scalp.

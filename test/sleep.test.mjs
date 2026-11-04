@@ -23,10 +23,10 @@ test('cumulative sleep probability grows with idle time and is independent of fr
 
 test('waking reopens eyes before raising the head, and restarts the idle lottery',()=>{
  const s=new Sleep(()=>0);for(let i=0;i<300;i++)s.update(dt,{idleFor:120+i*dt});assert.equal(s.closure,1);assert.equal(s.depth,1);
- s.update(dt,{idleFor:0,active:true});assert.equal(s.sleeping,false);assert.equal(s.deadline,null);assert.ok(s.closure>0);assert.equal(s.depth,1);
- while(s.closure>0){s.update(dt,{idleFor:0,active:true});assert.equal(s.depth,1);}
- const opened=s.time;while(s.time-opened<.08){s.update(dt,{idleFor:0,active:true});assert.equal(s.depth,1);}
- for(let i=0;i<240;i++)s.update(dt,{idleFor:0,active:true});assert.equal(s.closure,0);assert.equal(s.depth,0);
+ s.update(dt,{idleFor:0,active:true,wake:true});assert.equal(s.sleeping,false);assert.equal(s.deadline,null);assert.ok(s.closure>0);assert.equal(s.depth,1);
+ while(s.closure>0){s.update(dt,{idleFor:0,active:true,wake:true});assert.equal(s.depth,1);}
+ const opened=s.time;while(s.time-opened<.08){s.update(dt,{idleFor:0,active:true,wake:true});assert.equal(s.depth,1);}
+ for(let i=0;i<240;i++)s.update(dt,{idleFor:0,active:true,wake:true});assert.equal(s.closure,0);assert.equal(s.depth,0);
  s.update(dt,{idleFor:119});assert.equal(s.sleeping,false);s.update(dt,{idleFor:600});assert.equal(s.sleeping,true);s.reset();assert.equal(s.depth,0);
 });
 
@@ -38,7 +38,7 @@ test('desktop wall time counts hidden intervals; far movement does not wake a sl
  m.attention.update(dt,{...input,now:601});m.step(dt);assert.equal(m.current.sleeping,true);
  for(let i=0;i<300;i++){m.attention.update(dt,{...input,x:900+i,now:601+i*dt});m.step(dt);}
  assert.equal(m.current.sleep,1);assert.equal(m.current.left,0);assert.equal(m.current.right,0);assert.ok(m.current.earMood<-.99);assert.ok(m.blocksTravel());
- m.attention.update(dt,{...input,near:true,x:120,y:120,now:607});m.step(dt);assert.equal(m.current.sleeping,false);assert.equal(m.attention.current.inactiveFor,0);
+ m.attention.update(dt,{...input,near:true,x:120,y:120,wake:true,now:607});m.step(dt);assert.equal(m.current.sleeping,false);assert.equal(m.attention.current.inactiveFor,0);
  for(let i=0;i<420;i++){m.attention.update(dt,{...input,near:true,x:120+Math.sin(i)*15,y:120,now:607+i*dt});m.step(dt);}
  assert.equal(m.current.sleep,0);assert.ok(m.current.left>.99);assert.equal(m.blocksTravel(),false);
 });
@@ -71,7 +71,7 @@ test('waking overrides residual droopy eyelids before the sleeping posture rises
  m.attention.droop=1;m.attention.lastNear=-30;m.attention.lastInteraction=-601;
  for(let i=0;i<300;i++){m.attention.update(dt,far);m.step(dt);}assert.equal(m.current.sleep,1);
  for(let i=0;i<300;i++){
-  m.attention.update(dt,{...far,x:120+Math.sin(i*.1)*20,y:110,near:true});m.step(dt);
+  m.attention.update(dt,{...far,x:120+Math.sin(i*.1)*20,y:110,near:true,wake:i===0});m.step(dt);
   if(m.current.sleep<1&&m.current.sleep>0){assert.ok(m.current.left>.99&&m.current.right>.99);}
  }
  assert.equal(m.current.sleep,0);
