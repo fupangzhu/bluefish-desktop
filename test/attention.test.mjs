@@ -31,3 +31,5 @@ test('relaxation and release are consistent across frame rates and avatar sizes'
 });
 
 test('startup and reset give attention a grace period before drooping',()=>{const a=new Attention();let s;for(let i=0;i<120;i++)s=a.update(1/60,{});assert.ok(s.droop<.001);a.reset();assert.equal(a.current.droop,0);});
+
+test('active manipulation stays alert even outside the nearby zone',()=>{const a=new Attention();let s;for(let i=0;i<20*60;i++)s=a.update(1/60,{x:900,y:-100,size:240,near:false,overHead:true,blocked:true,poke:true});assert.ok(s.droop<.001&&s.rub<.001&&s.eyeCap>.99);});

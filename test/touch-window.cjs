@@ -50,7 +50,7 @@ app.whenReady().then(async()=>{
         if(x>2&&y>2&&x<innerWidth-2&&y<innerHeight-2&&b.partAt(x,y)===${JSON.stringify(name)})return {x,y};
       }return null;
     })()`);
-    const input=(type,p)=>wc.sendInputEvent({type,...p,button:'left',clickCount:1});
+    const input=(type,p)=>{if(type==='mouseMove')latestPointer={...p,gx:0,gy:0};wc.sendInputEvent({type,...p,button:'left',clickCount:1});};
     const press=async p=>{latestPointer={...p,gx:0,gy:0};input('mouseMove',p);input('mouseDown',p);await sleep(25);};
     // Offscreen sendInputEvent drops coordinates outside its viewport; the global
     // pointer stream above already covers pulling beyond the silhouette.
