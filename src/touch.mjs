@@ -22,7 +22,7 @@ export class Touch {
   twitch(side,idle=false){
     if(side!=='l'&&side!=='r')return;
     const count=this.random()<.5?1:2;
-    this.ears[side]={at:this.time,count:idle?1:count,amplitude:idle?.38:1,period:idle?.29:.2,idle};
+    this.ears[side]={at:this.time,count:idle?1:count,amplitude:idle?.38:1,period:idle?.16:.115,idle};
     if(!idle)this.scheduleEar();return count;
   }
   step(dt,reduced=false,idle=true){
@@ -44,13 +44,15 @@ export class Touch {
     }
     const fold=side=>{
       const ear=this.ears[side];if(!ear)return 0;
-      const elapsed=this.time-ear.at,duration=reduced?.22:ear.count*ear.period;
+      const elapsed=this.time-ear.at,duration=reduced?.22:ear.count*ear.period+.045;
       if(elapsed>=duration){this.ears[side]=null;return 0;}
       if(reduced)return .22*Math.sin(Math.PI*elapsed/duration);
+      if(elapsed>=ear.count*ear.period)return 0;
       const phase=elapsed%ear.period/ear.period;
-      return ear.amplitude*(phase<.25?smooth(phase/.25):phase<.375?1:1-smooth((phase-.375)/.475));
+      return ear.amplitude*Math.sin(Math.PI*phase)**2;
     };
     const state={pain:this.value.pain,ahogePullX:this.value.x,ahogePullY:this.value.y,earFoldL:fold('l'),earFoldR:fold('r')};
+    for(const side of ['l','r']){const ear=this.ears[side];if(ear&&!reduced)state[side==='l'?'earTwitchL':'earTwitchR']={elapsed:this.time-ear.at,count:ear.count,period:ear.period,amplitude:ear.amplitude};}
     if(this.grab)state.ahogeGrab={...this.grab};return state;
   }
 }

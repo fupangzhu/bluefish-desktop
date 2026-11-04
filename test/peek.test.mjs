@@ -23,7 +23,7 @@ test('steps lead with the hand on the step side, lift and squash',()=>{
   const p=new Peek({size:300});let maxLift=0,maxSquash=0;
   p.forceStep(1);
   run(p,0.8,watching,o=>{maxLift=Math.max(maxLift,o.hands[1].lift);maxSquash=Math.max(maxSquash,o.hands[1].squash);assert.ok(o.hands[0].lift<=o.hands[1].lift+300*0.09);});
-  assert.ok(maxLift>300*0.07&&maxLift<=300*0.081);assert.ok(maxSquash>0.05);
+  assert.ok(maxLift>300*0.02&&maxLift<=300*0.026);assert.ok(maxSquash>0.05);
   const last=p.snapshot();assert.ok(Math.abs(last.hands[0].x-last.hands[1].x)<1e-9);assert.ok(Math.abs(last.hands[1].x-300*CONFIG.stepSize)<1e-6);
 });
 test('respects max offset and cooldown between steps',()=>{

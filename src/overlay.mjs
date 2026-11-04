@@ -1,3 +1,4 @@
+import {headContact} from './attention.mjs';
 import {Motion} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {Peek} from './peek.mjs';
@@ -10,8 +11,8 @@ import {TouchInput} from './touch.mjs';
 export const CUT_ART_Y=0.73;
 const RENDER_Y_SCALE=1.76;  // renderer.project: clip.y = -(y-0.5)*1.76
 const GRIP_RATIO=0.05;      // fingertip overhang below the ledge (x size); main computes the window the same way
-const NEAR_MIN=320;         // px, "near" = within max(1.6*s, NEAR_MIN) of the head centre
-const NEAR_RATIO=1.6;
+const NEAR_MIN=180;         // px, "near" = within max(1.05*s, NEAR_MIN) of the head centre
+const NEAR_RATIO=1.05;
 // ---------------------------------------------------------------------------------------------------
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -136,7 +137,11 @@ function frame(now){
     const fresh=pointer&&performance.now()-pointerAt<800;
     let near=false;if(fresh)near=Math.hypot(pointer.x-cx,pointer.y-cy)<Math.max(NEAR_RATIO*s,NEAR_MIN);
     const follow=state.follow;
-    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx:0,gy:fresh&&follow?pointer.gy:0,near:near||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced});
+    const hx=fresh?(pointer.x-pos.left)/s:.5,hy=fresh?(pointer.y-pos.top)/s:.5;
+    const attention=motion.attention.update(dt,{x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
+      overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
+      hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,poke:pokeFlag});
+    const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:attention.attentive||!follow,poke:pokeFlag||!!touchInput.active,docked:L.docked,reduced:state.reduced});
     pokeFlag=false;
     motion.override=follow?out.override:null;
     if(out.gesture)motion.gesture(out.gesture);

@@ -10,9 +10,9 @@ export const CONFIG={
   returnCooldown:0.7,    // cooldown used while shuffling back home
   stepDuration:0.58,     // one full step, lead hand + trail hand + settle
   headMoveAt:0.12,       // when inside a step the head starts following
-  liftHeight:0.08,       // peak hand lift (x s)
-  handRotation:0.2,      // rad, outward tilt of the lead hand at peak lift
-  squashAmount:0.18,     // landing squash
+  liftHeight:0.025,       // peak hand lift (x s)
+  handRotation:0.08,      // rad, outward tilt of the lead hand at peak lift
+  squashAmount:0.10,     // landing squash
   ignoreAfter:45,        // seconds without attention before going home and sulking
   sulkExitNear:0.6,      // seconds of "near" that cheer her up
   sulkYaw:12,            // degrees away from the cursor

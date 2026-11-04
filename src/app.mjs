@@ -1,3 +1,4 @@
+import {headContact} from './attention.mjs';
 import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {hydrate,icons} from './icons.mjs';
@@ -89,10 +90,11 @@ $('#advToggle').addEventListener('click',()=>{
 new ResizeObserver(()=>{const r=stage.getBoundingClientRect(),side=Math.max(120,Math.floor(Math.min(r.width,r.height)-24));const px=Math.min(side,640)+'px';canvas.style.width=canvas.style.height=px;const m=$('#masterCompare');if(m)m.style.width=m.style.height=px;}).observe(stage);
 
 /* Preview gaze: only while the cursor is over the stage. */
-function gaze(x,y){const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
+let attentionPointer=null;
+function gaze(x,y){attentionPointer={x,y};const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
 stage.addEventListener('pointermove',e=>gaze(e.clientX,e.clientY));
-stage.addEventListener('pointerleave',()=>motion.setGaze(0,0));
-addEventListener('blur',()=>motion.setGaze(0,0));
+stage.addEventListener('pointerleave',()=>{attentionPointer=null;motion.setGaze(0,0);});
+addEventListener('blur',()=>{attentionPointer=null;motion.setGaze(0,0);});
 const touchInput=new TouchInput(motion.touch);
 let touchPointer=null;
 const canvasPoint=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
@@ -140,7 +142,10 @@ try{
     image.style.width=canvas.style.width;image.style.height=canvas.style.height;stage.append(image);canvas.style.visibility='hidden';btn.setAttribute('aria-pressed','true');
   });
   let last=performance.now();
-  function draw(now){if(!paused){motion.step(Math.min(.1,(now-last)/1000));renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
+  function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
+    const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
+    motion.attention.update(dt,{x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active});
+    motion.step(dt);renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());

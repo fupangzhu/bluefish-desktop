@@ -23,6 +23,12 @@ app.whenReady().then(async()=>{
     const base='http://127.0.0.1:'+server.address().port;
     win=new BrowserWindow({width:598,height:345,useContentSize:true,show:false,frame:false,transparent:true,webPreferences:{preload,backgroundThrottling:false,offscreen:true,contextIsolation:true,nodeIntegration:false,sandbox:true}});
     const wc=win.webContents;
+    // Production keeps sending the global pointer every 33ms, including while
+    // stationary. Preserve that input cadence in the hidden rendering harness.
+    let latestPointer=null;const send=wc.send.bind(wc);
+    wc.send=(channel,...args)=>{if(channel==='test-pointer')latestPointer=args[0];return send(channel,...args);};
+    const pointerTimer=setInterval(()=>{if(latestPointer&&!win.isDestroyed())send('test-pointer',latestPointer);},33);
+    win.on('closed',()=>clearInterval(pointerTimer));
     wc.on('console-message',({level,message})=>{if(level==='error'&&!message.includes('GPU stall'))errors.push(message);});
     wc.on('render-process-gone',(_e,details)=>errors.push(JSON.stringify(details)));
     const js=code=>wc.executeJavaScript(code);
@@ -45,8 +51,10 @@ app.whenReady().then(async()=>{
       }return null;
     })()`);
     const input=(type,p)=>wc.sendInputEvent({type,...p,button:'left',clickCount:1});
-    const press=async p=>{input('mouseMove',p);input('mouseDown',p);await sleep(25);};
-    const release=async p=>{input('mouseUp',p);await sleep(30);};
+    const press=async p=>{latestPointer={...p,gx:0,gy:0};input('mouseMove',p);input('mouseDown',p);await sleep(25);};
+    // Offscreen sendInputEvent drops coordinates outside its viewport; the global
+    // pointer stream above already covers pulling beyond the silhouette.
+    const release=async p=>{const b=win.getContentBounds(),point={x:Math.max(1,Math.min(b.width-2,p.x)),y:Math.max(1,Math.min(b.height-2,p.y))};latestPointer={...point,gx:0,gy:0};input('mouseUp',point);await sleep(30);};
     const shot=async name=>{await sleep(50);fs.writeFileSync(path.join(OUT,name+'.png'),(await wc.capturePage()).toPNG());};
     evidence.sizes=[];
     for(const size of [150,240,460])for(const docked of [true,false]){
@@ -55,9 +63,11 @@ app.whenReady().then(async()=>{
       dragEvents=[];const p=points.ahoge;await press(p);
       // The global pointer stream keeps the grab alive even beyond the painted silhouette.
       const tug={x:p.x+Math.round(size*.06),y:p.y-Math.round(size*.16)};
-      wc.send('test-pointer',{...tug,gx:0,gy:0});await sleep(160);
+      wc.send('test-pointer',{...tug,gx:0,gy:0});
+      // Wait for rendered input rather than assuming a GPU frame fits in 160ms.
+      for(let frame=0;frame<40;frame++){if(await js('window.bluefish.motion.current.pain>.8'))break;await sleep(50);}
       const held=await js('({...window.bluefish.motion.current,part:window.bluefish.touchInput.active?.part})');
-      assert.ok(held.pain>.8,`pain active at ${size}`);assert.equal(held.part,'ahoge');assert.deepEqual(dragEvents,[],'hair tug never drags native window');
+      assert.ok(held.pain>.8,`pain active at ${size}: ${JSON.stringify({pain:held.pain,part:held.part,point:p})}`);assert.equal(held.part,'ahoge');assert.deepEqual(dragEvents,[],'hair tug never drags native window');
       if(size===460){await shot(docked?'pain-docked':'pain-free');}
       // Keep release inside the window even when a simulated global pointer went outside it.
       await release(p);await sleep(700);

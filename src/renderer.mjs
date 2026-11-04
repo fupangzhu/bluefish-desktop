@@ -1,3 +1,4 @@
+import {deformEar} from './ears.mjs';
 import {AHOGE_REST,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
@@ -93,20 +94,12 @@ export class Renderer{
     if(name.startsWith('bow_'))localAngle=lag*.19+(s.secondary?Math.sin(t*2.0+(name==='bow_l'?0:1.3))*.8:0);
     if(name.startsWith('ear_')){
       localAngle=lag*.07+(s.secondary?Math.sin(t*1.5)*.22:0);
-      const fold=clamp((name==='ear_l'?s.earFoldL:s.earFoldR)||0,0,1),mood=clamp(s.earMood||0,-1,1);
-      const bend=clamp(38*Math.max(0,-mood)-8*Math.max(0,mood)+65*fold,-8,75);
-      if(bend){
-        const dx=px-layer.pivot[0],dy=py-layer.pivot[1];
-        // The inboard attachment stays fixed under the headdress and bow.
-        const u=clamp((name==='ear_l'?-dx:dx)/((layer.box[2]-layer.box[0])*.55),0,1),weight=u*u*(3-2*u);
-        const a=rad((name==='ear_l'?-1:1)*bend*weight);
-        px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;
-      }
+      [px,py]=deformEar(px,py,layer,s);
     }
     if(localAngle||droop){const dx=px-layer.pivot[0],dy=py-layer.pivot[1];let deg=localAngle;
       if(droop)deg+=droop*DROOP_MAX*clamp(Math.hypot(dx,dy)/(layer.box[3]-layer.box[1]),0,1)**1.3; // bend: grows toward the tip, positive = tip flops forward/down
       const a=rad(deg);px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
-    if(name.startsWith('eye_')){px+=(s.gx||0)*w*.006;py+=(s.gy||0)*h*.005;}
+    if(name.startsWith('eye_')&&name.endsWith('_open')){px+=(s.gx||0)*w*.009;py+=(s.gy||0)*h*.006;}
     let x=px/w-.5,y=py/h-.5;
     if(name==='hair_back'){const tip=Math.max(0,(py/h-.48)/.5);x+=lag*.0009*tip+(s.secondary?Math.sin(t*1.6+x*4)*.0025*tip:0);}
     if(name==='hair_front'){const tip=Math.max(0,(py/h-.42)/.5);x+=lag*.0002*tip;}
