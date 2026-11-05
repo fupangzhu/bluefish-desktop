@@ -67,7 +67,7 @@ async function stills(){
  const cw=windowFor(980,720);await cw.loadURL(base+'/');await ready(cw.webContents,'!!window.bluefish?.renderer');await sleep(1100);await shot(cw.webContents,'console.png');manifest.stills.console={file:'console.png',width:980,height:720};cw.destroy();console.log('Captured sleep, sizes, menu and console');
 }
 app.whenReady().then(async()=>{try{
- const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
+ const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer({editor:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
  const only=process.argv.find(a=>a.startsWith('--only='))?.split('=')[1];
  if(!only){await hero();for(const reaction of ['sleepy','playful','subtle'])await petting(reaction);await stills();}
  await interaction();

@@ -48,14 +48,14 @@ export function drawHand(ctx,{x,y,w,lift=0,squash=0,skin=makeSkin(),side=0,tap=0
   ctx.restore();
 }
 // Draws both balls. cx = window centre x, ledgeY, s = avatar size, hands = peek output.
-export function drawHands(ctx,{cx,ledgeY,s,hands,skin}){
+export function drawHands(ctx,{cx,ledgeY,s,hands,skin,onlyHand=null}){
   const w=HAND_WIDTH*s;
-  [-1,1].forEach((side,i)=>{const h=hands[i]||{};drawHand(ctx,{x:cx+side*.21*s+(h.x||0),y:ledgeY,w,lift:h.lift||0,squash:h.squash||0,skin,side,tap:h.tap||0,tapSquash:h.tapSquash||0,squeeze:h.squeeze||0,contact:h.contact||0});});
+  [-1,1].forEach((side,i)=>{if(onlyHand!==null&&i!==onlyHand)return;const h=hands[i]||{};drawHand(ctx,{x:cx+side*.21*s+(h.x||0),y:ledgeY,w,lift:h.lift||0,squash:h.squash||0,skin,side,tap:h.tap||0,tapSquash:h.tapSquash||0,squeeze:h.squeeze||0,contact:h.contact||0});});
 }
 // Lift the existing round hands toward projected eyes; no new bitmap is needed.
-export function eyeRubHands(hands,{eyes,cx,ledgeY,size,mix,phase=0}){
+export function eyeRubHands(hands,{eyes,cx,ledgeY,size,mix,phase=0,hand=0}){
   return [-1,1].map((side,i)=>{
-    const h=hands[i]||{},eye=eyes[i],jiggleX=Math.sin(phase+i*.5)*size*.006,jiggleY=Math.cos(phase+i*.5)*size*.004;
+    const h={...(hands[i]||{}),lift:0,squash:0,tap:0,tapSquash:0,squeeze:0,contact:0};if(i!==hand)return h;const eye=eyes[i],jiggleX=Math.sin(phase+i*.5)*size*.006,jiggleY=Math.cos(phase+i*.5)*size*.004;
     return {...h,x:(h.x||0)*(1-mix)+(eye.x+jiggleX-(cx+side*.21*size))*mix,
       lift:(h.lift||0)*(1-mix)+(ledgeY-eye.y-jiggleY)*mix,tap:0,tapSquash:0,squeeze:0,contact:mix};
   });

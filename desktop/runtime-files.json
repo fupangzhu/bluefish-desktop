@@ -1,0 +1,44 @@
+{
+  "files": [
+    "package.json",
+    "server.mjs",
+    "THIRD_PARTY_NOTICES.md",
+    "overlay.html",
+    "menu.html",
+    "tokens.css",
+    "overlay.css",
+    "menu.css",
+    "desktop/main.cjs",
+    "desktop/dock.cjs",
+    "desktop/drag.cjs",
+    "desktop/preload.cjs",
+    "desktop/menu-preload.cjs",
+    "desktop/runtime-files.json",
+    "src/ahoge.mjs",
+    "src/attention.mjs",
+    "src/doze.mjs",
+    "src/ears.mjs",
+    "src/eyelids.mjs",
+    "src/eyes.mjs",
+    "src/hands.mjs",
+    "src/icons.mjs",
+    "src/menu.mjs",
+    "src/motion.mjs",
+    "src/overlay.mjs",
+    "src/peek.mjs",
+    "src/sleep.mjs",
+    "src/touch.mjs",
+    "src/wake.mjs",
+    "src/renderer.mjs",
+    "src/reluctance.mjs"
+  ],
+  "assetFiles": [
+    "assets/rig.json",
+    "assets/icon.png",
+    "assets/icon.ico"
+  ],
+  "assetDirectories": [
+    "assets/layers",
+    "assets/vector"
+  ]
+}

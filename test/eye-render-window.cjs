@@ -1,0 +1,13 @@
+const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{pathToFileURL}=require('node:url');
+const ROOT=path.resolve(__dirname,'..'),OUT=path.join(ROOT,'.test-output/eye-render');fs.mkdirSync(OUT,{recursive:true});app.setPath('userData',path.join(OUT,'profile'));const wait=ms=>new Promise(r=>setTimeout(r,ms));let win,server;
+app.whenReady().then(async()=>{const evidence={};try{
+ const {createServer}=await import(pathToFileURL(path.join(ROOT,'server.mjs')));server=createServer({editor:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));win=new BrowserWindow({width:1000,height:800,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,sandbox:true}});const wc=win.webContents,js=s=>wc.executeJavaScript(s);await win.loadURL('http://127.0.0.1:'+server.address().port+'/');
+ for(let i=0;i<200;i++){if(await js('!!(window.bluefish?.renderer&&bluefish.motion.current)'))break;await wait(100);}assert.ok(await js('!!window.bluefish?.renderer'));await js('bluefish.pause(true)');
+ const shot=async name=>fs.writeFileSync(path.join(OUT,name+'.png'),(await wc.capturePage()).toPNG());
+ const render=async(o,pose={})=>js(`(()=>{const b=bluefish,s={...b.motion.current,yaw:0,pitch:0,roll:0,hair:0,secondary:false,breath:0,gx:0,gy:0,pain:0,left:${o},right:${o},...${JSON.stringify(pose)}};b.renderer.render(s);const g=b.renderer.gl,d=new Uint8Array(b.renderer.canvas.width*b.renderer.canvas.height*4);g.readPixels(0,0,b.renderer.canvas.width,b.renderer.canvas.height,g.RGBA,g.UNSIGNED_BYTE,d);let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>32)n++;return {open:${o},pixels:n};})()`);
+ evidence.eyes=[];
+ for(const side of ['l','r']){await js(`bluefish.renderer.solo='eye_${side}_open'`);const frames=[];for(const o of [1,.9,.75,.5,.25,.1,.03,0]){frames.push(await render(o));await shot(side+'-'+o);}assert.ok(frames[0].pixels>300);assert.ok(frames.at(-1).pixels>5&&frames.at(-1).pixels<frames[0].pixels*.12);for(let i=1;i<frames.length;i++)assert.ok(frames[i].pixels<=frames[i-1].pixels*1.1+8,JSON.stringify(frames));evidence.eyes.push({side,frames});}
+ await js('bluefish.renderer.solo=null');for(const o of [1,.75,.5,.25,.1,0]){await render(o);await shot('full-'+o);}
+ for(const [name,pose] of [['left',{yaw:-8,pitch:12,roll:-10}],['right',{yaw:18,pitch:-12,roll:10}]]){await render(0,pose);await shot('closed-'+name);}
+ evidence.passed=true;console.log(JSON.stringify(evidence));
+}catch(error){evidence.error=error.stack;console.error(error);process.exitCode=1;}finally{fs.writeFileSync(path.join(OUT,'result.json'),JSON.stringify(evidence,null,2));win?.destroy();server?.close();app.exit(process.exitCode||0);}});

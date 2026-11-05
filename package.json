@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "preview": "node server.mjs",
+    "editor": "electron desktop/editor.cjs",
     "export:ahoge": "electron tools/export-ahoge.cjs",
     "test": "node --test test/*.test.mjs"
   },

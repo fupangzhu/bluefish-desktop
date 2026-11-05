@@ -1,9 +1,21 @@
+import {eyeFrame,EYE_STYLE} from './eyes.mjs';
 import {deformEar} from './ears.mjs';
 import {AHOGE_REST,AHOGE_COLORS,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
-const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;
-void main(){vec4 color=texture2D(image,tex);if(eyeOpen>=0.){vec2 p=(crop.xy+tex*crop.zw-eye.xy);float yy=-sin(eye.z)*p.x+cos(eye.z)*p.y;float top=eyeOpen>=.5?eye.w*(1.-2.*eyeOpen):0.;float bottom=eyeOpen>=.5?eye.w:eye.w*eyeOpen*2.;float e=max(.0007,aa);float mask=smoothstep(top-e,top+e,yy)*(1.-smoothstep(bottom-e,bottom+e,yy));color*=mask;}gl_FragColor=color*opacity;}`;
+const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;uniform vec4 lidShape;uniform vec2 lidMotion;uniform float irisGate;uniform float irisCorner;uniform vec2 eyeGaze;uniform float irisWidth;
+void main(){
+ vec4 color=texture2D(image,tex);
+ if(eyeOpen>=0.){
+  vec2 p=crop.xy+tex*crop.zw-eye.xy;float cs=cos(eye.z),sn=sin(eye.z),xx=cs*p.x+sn*p.y,yy=-sn*p.x+cs*p.y;
+  vec2 local=vec2((xx-eyeGaze.x)/irisWidth,yy-eyeGaze.y);vec2 source=eye.xy+vec2(cs*local.x-sn*local.y,sn*local.x+cs*local.y);color=texture2D(image,(source-crop.xy)/crop.zw);
+  float r=lidShape.x,x=clamp(xx,-r,r),arc=lidShape.y*(1.-x*x/(r*r)),profile=1.-irisCorner*min(1.,xx*xx/(r*r)),top=arc-lidMotion.x*profile,bottom=arc+lidMotion.y*profile,e=max(.0003,aa*.5);
+  float mask=smoothstep(top-e,top+e,yy)*(1.-smoothstep(bottom-e,bottom+e,yy))*irisGate*mix(1.,1.-smoothstep(r-e,r+e,abs(xx)),irisCorner);color*=mask;
+  float slope=-2.*x*(lidShape.y-lidMotion.x*irisCorner)/(r*r);float distanceToLid=length(vec2(xx-x,(yy-top)/sqrt(1.+slope*slope)));float ink=(1.-smoothstep(lidShape.z-e,lidShape.z+e,distanceToLid))*lidShape.w;
+  color=vec4(vec3(.10980392,.46666667,.75294118)*ink,ink)+color*(1.-ink);
+ }
+ gl_FragColor=color*opacity;
+}`;
 const rad=d=>d*Math.PI/180;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const FALLBACK_TEX_SCALE=.5; // WebGL1 has no mipmaps for NPOT textures: pre-shrink layers instead
@@ -36,7 +48,7 @@ export class Renderer{
     this.program=g.createProgram();g.attachShader(this.program,compile(g.VERTEX_SHADER,VERT));g.attachShader(this.program,compile(g.FRAGMENT_SHADER,FRAG));g.linkProgram(this.program);if(!g.getProgramParameter(this.program,g.LINK_STATUS))throw Error(g.getProgramInfoLog(this.program));g.useProgram(this.program);
     this.buffer=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,this.buffer);
     for(const [name,offset] of [['pos',0],['uv',8]]){const loc=g.getAttribLocation(this.program,name);g.enableVertexAttribArray(loc);g.vertexAttribPointer(loc,2,g.FLOAT,false,16,offset);}
-    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye','aa'].map(k=>[k,g.getUniformLocation(this.program,k)]));
+    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye','aa','lidShape','lidMotion','irisGate','irisCorner','eyeGaze','irisWidth'].map(k=>[k,g.getUniformLocation(this.program,k)]));
     g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);this.layers=[];this.byName=new Map();this.stats={drawCalls:0,vertices:0,frameMs:0};
   }
   async init(){
@@ -52,7 +64,9 @@ export class Renderer{
       const k=this.webgl2?1:FALLBACK_TEX_SCALE,tw=Math.max(1,Math.round(width*k)),th=Math.max(1,Math.round(height*k));
       const cropped=document.createElement('canvas');cropped.width=tw;cropped.height=th;const c2=cropped.getContext('2d');c2.imageSmoothingEnabled=true;c2.imageSmoothingQuality='high';c2.drawImage(img,x0,y0,width,height,0,0,tw,th);
       if(meta.name==='hair_back')cleanHairBacking(cropped,(meta.pivot[0]-x0)*k,(meta.pivot[1]-y0)*k);
-      this.addLayer(meta,cropped);
+      if(meta.name.endsWith('_open')&&meta.eyeSide){
+        const padding=64,pad=Math.round(padding*k),image=document.createElement('canvas');image.width=tw+2*pad;image.height=th+2*pad;image.getContext('2d').drawImage(cropped,pad,pad);this.addLayer({...meta,box:[x0-padding,y0-padding,x1+padding,y1+padding]},image);
+      }else this.addLayer(meta,cropped);
     }
     // Draw the reference's inward-facing > < eyelids in source coordinates, so
     // they use the same head projection, occlusion and scaling as the original eyes.
@@ -104,7 +118,6 @@ export class Renderer{
     if(localAngle||droop){const dx=px-layer.pivot[0],dy=py-layer.pivot[1];let deg=localAngle;
       if(droop)deg+=droop*75; // A single frame rotation preserves the vector strand's width and curl.
       const a=rad(deg);px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
-    if(name.startsWith('eye_')&&name.endsWith('_open')){px+=(s.gx||0)*w*.009;py+=(s.gy||0)*h*.006;}
     let x=px/w-.5,y=py/h-.5;
     if(name==='hair_back'){const tip=Math.max(0,(py/h-.48)/.5);x+=lag*.0009*tip+(s.secondary?Math.sin(t*1.6+x*4)*.0025*tip:0);}
     if(name==='hair_front'){const tip=Math.max(0,(py/h-.42)/.5);x+=lag*.0002*tip;}
@@ -112,7 +125,7 @@ export class Renderer{
     const z=layer.depth+bulge,yaw=rad(s.yaw),pitch=rad(s.pitch),roll=rad(s.roll);
     const xx=x*Math.cos(yaw)+z*Math.sin(yaw),zz=-x*Math.sin(yaw)+z*Math.cos(yaw);
     const yy=y*Math.cos(pitch)-zz*Math.sin(pitch),rx=xx*Math.cos(roll)-yy*Math.sin(roll),ry=xx*Math.sin(roll)+yy*Math.cos(roll);
-    return [rx*1.76,-(ry+(s.breath||0))*1.76];
+    return [rx*1.76+2*(s.shiftX||0),-(ry+(s.breath||0))*1.76];
   }
   draw(layer,s,opacity=1,eyeOpen=-1){
     if(!layer||opacity<=0)return;
@@ -121,7 +134,10 @@ export class Renderer{
     layer.points.forEach((p,i)=>{const q=this.project(p[0],p[1],s,layer,false,p[4]),v=1+2*this.padding,x=q[0]/v,y=q[1]/v;layer.data[i*4]=x;layer.data[i*4+1]=y;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);});
     layer.bounds=[minX,minY,maxX,maxY];if(opacity>.1)this.drawn.push(layer);
     g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.aa,1.5/(this.canvas.width/(1+2*this.padding)*.88));g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
-    if(layer.eyeSide){const e=this.rig.eyes.find(e=>e.side===layer.eyeSide);g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,(e.box[3]-e.box[1])/h*.47);}
+    if(layer.eyeSide){
+      const e=this.rig.eyes.find(e=>e.side===layer.eyeSide),f=eyeFrame(Math.max(0,eyeOpen),s.sideEye||0),half=(e.box[3]-e.box[1])/h*.47;
+      g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,half);g.uniform4f(this.uniform.lidShape,f.radius/w,f.curve/h,EYE_STYLE.stroke/h/2,f.line);g.uniform2f(this.uniform.lidMotion,f.upper*half,f.lower*half);g.uniform1f(this.uniform.irisGate,f.iris);g.uniform1f(this.uniform.irisCorner,f.corner);g.uniform2f(this.uniform.eyeGaze,(s.gx||0)*f.gazeSpan,(s.gy||0)*.006);g.uniform1f(this.uniform.irisWidth,f.irisWidth);
+    }
     g.bindTexture(g.TEXTURE_2D,layer.texture);g.bufferData(g.ARRAY_BUFFER,layer.data,g.DYNAMIC_DRAW);g.drawArrays(g.TRIANGLES,0,layer.data.length/4);this.stats.drawCalls++;this.stats.vertices+=layer.points.length;
   }
   render(s){
@@ -144,13 +160,12 @@ export class Renderer{
       this.ahogePose=solveAhoge(grab.source,{x,y},{strength:grab.strength,held:grab.held,base:grab.base||AHOGE_REST,binding:grab.binding});
     }
     g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);this.stats.drawCalls=0;this.stats.vertices=0;this.drawn=[];
-    if(this.solo){const layer=this.byName.get(this.solo);if(layer)this.draw(layer,s);}
+    if(this.solo){const layer=this.byName.get(this.solo);if(layer)this.draw(layer,s,1,layer.name.endsWith('_open')?(layer.eyeSide==='l'?s.left:s.right):-1);}
     else for(const name of this.rig.drawOrder){
       const layer=this.byName.get(name);if(!layer)continue;
       if(name.startsWith('eye_')&&name.endsWith('_open')){
         const openness=layer.eyeSide==='l'?s.left:s.right,pain=(s.pain||0)>.08?1:0;
-        if(openness>.015)this.draw(layer,s,1-pain,openness);
-        if(openness<.15)this.draw(this.byName.get(name.replace('_open','_closed')),s,(1-openness/.15)*(1-pain));
+        this.draw(layer,s,1-pain,openness);
         if(pain)this.draw(this.byName.get(name.replace('_open','_pain')),s,pain);
       }else this.draw(layer,s);
     }

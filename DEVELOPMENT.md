@@ -16,16 +16,16 @@
 仓库内关键位置：
 
 ```
-desktop/        Electron 主进程（窗口、贴边、拖拽、菜单、控制台、单实例锁、托盘）
-src/            renderer（WebGL 分层网格）· motion · peek（小手/情绪）· hands · overlay · menu · app（控制台）
+desktop/        Electron 主进程（窗口、贴边、拖拽、菜单、独立源码编辑器、单实例锁、托盘）
+src/            renderer（WebGL 分层网格）· motion · peek（小手/情绪）· hands · overlay · menu · app / preview（仅源码编辑器）
 overlay.html    桌面宠物（透明窗口）
 menu.html       右键菜单
-index.html      控制台
+index.html      源码动画编辑器
 tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 117 项）+ Electron 交互回归
+test/           node --test 单测（当前 132 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
@@ -34,16 +34,21 @@ test/           node --test 单测（当前 117 项）+ Electron 交互回归
 - Node 22+，`node_modules` 已安装（Electron 45.2.1）
 - Python 3.10+，需要 `pillow`（出图用；历史合成脚本另需 `numpy`）
 - .NET Framework 4.x 的 `csc.exe`（Windows 自带，用于编译启动器/安装器）
-- git（`tools/package_portable.py` 用 `git ls-files` 决定打包内容）
+- git（`tools/package_portable.py` 用 `runtime-files.json` 限定发布内容，`git ls-files` 检查已跟踪文件）
 - 首次准备：`npm ci`，然后 `npm test` 确认环境正常
 
 ## 3. 常用命令
 
 ```powershell
 npm start          # 启动桌面宠物（Electron）
-npm run preview    # 浏览器预览控制台 http://127.0.0.1:8766
+npm run editor     # 独立源码动画编辑器（不随 Windows 发布包分发）
+npm run preview    # 浏览器预览编辑器 http://127.0.0.1:8766
 npm test           # node --test，逻辑测试
 ```
+
+编辑器提供 12 个确定性动画预览，含左右侧瞥、单手揉眼、假醒和睡眠微动作，支持暂停、拖动时间轴和 0.25–4 倍速。编辑器直接使用 `Motion` 与同一 WebGL 渲染器。`desktop/editor.cjs` 为开发入口；运行时服务默认禁止编辑器路由。
+
+日常开发直接修改源码并重启本机桌宠；只有明确要求发布时才构建 EXE/ZIP。发布清单 `desktop/runtime-files.json` 排除 index/style/app/preview/editor、测试、工具和文档，右键菜单不包含动画按钮或编辑器入口。
 
 调试快捷键：`Ctrl+Shift+F10` 显示/隐藏　`Ctrl+Shift+F11` 回到原位。
 
@@ -53,7 +58,7 @@ npm test           # node --test，逻辑测试
 - 单击哪只耳朵，哪只随机快速折动 1–2 次；在耳朵上拖动仍可移动整个角色。
 - 待机时每隔随机 60–120 秒触发一次较轻的单耳扑闪；关闭待机或开启减少动态效果时停用，手动交互会推迟下一次。
 - 情绪耳姿态由 `Motion` 的 `earMood` 驱动：萎靡随现有 droop 信号缓慢下垂，happy 时小幅立高再回到常态。渲染角度基线为下垂约 38° / 兴奋上抬最多 8°，耳根固定，点击与待机扑闪叠加并限幅。
-- 桌宠与控制台预览共用 `src/touch.mjs`；命中检测反算实际变形网格并检查像素透明度，避开呆毛环内空白和被遮住的耳朵。
+- 桌宠与源码编辑器共用 `src/touch.mjs`；命中检测反算实际变形网格并检查像素透明度，避开呆毛环内空白和被遮住的耳朵。
 - `src/ahoge.mjs` 定义六控制点三次 B 样条和曲率连续的两侧轮廓、蓝色渐变、材质抓点、长度约束与释放回弹。WebGL 直接绘制同源的向量网格，抓点反算头部投影，超过弹性范围后产生阻力。`npm run export:ahoge` 导出匹配的 `assets/vector/ahoge.svg`、2048×2048 透明 `assets/layers/ahoge.png` 和 rig 边界。
 - 上述交互从 v0.5.0 起包含在安装包与便携包中；源码运行可使用仓库中的启动脚本或 `npm start`。
 

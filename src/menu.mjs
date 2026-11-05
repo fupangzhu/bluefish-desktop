@@ -6,7 +6,7 @@ const card=$('.card'),size=$('#size'),sizeValue=$('#sizeValue');
 const toggles={follow:$('#follow'),idle:$('#idle'),docked:$('#docked')};
 // Without the Electron bridge (plain browser) the menu still renders, against a local stub.
 const local={size:240,docked:true,follow:true,idle:true,reduced:false,pose:{yaw:0,pitch:0,roll:0}};
-const api=ctl||{getState:async()=>local,onState(){},set(p){Object.assign(local,p);render(local);},action(){},command(){},fit(){}};
+const api=ctl||{getState:async()=>local,onState(){},set(p){Object.assign(local,p);render(local);},command(){},fit(){}};
 let dragging=false;
 function progress(el){el.style.setProperty('--progress',((el.value-el.min)/(el.max-el.min)*100)+'%');}
 function render(s){
@@ -20,7 +20,6 @@ function sendSize(){raf=0;if(pendingSize==null)return;const v=pendingSize;pendin
 size.addEventListener('input',()=>{progress(size);sizeValue.textContent=size.value;pendingSize=+size.value;if(!raf)raf=requestAnimationFrame(sendSize);});
 size.addEventListener('pointerdown',()=>{dragging=true;});
 for(const ev of ['pointerup','pointercancel','blur'])size.addEventListener(ev,()=>{dragging=false;});
-document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>api.action(b.dataset.action)));
 document.querySelectorAll('[data-command]').forEach(b=>b.addEventListener('click',()=>api.command(b.dataset.command)));
 for(const [k,el] of Object.entries(toggles))el.addEventListener('click',()=>{const next=el.getAttribute('aria-pressed')!=='true';el.setAttribute('aria-pressed',String(next));api.set({[k]:next});});
 addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();api.command('close-menu');}});

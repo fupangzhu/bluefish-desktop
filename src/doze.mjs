@@ -4,6 +4,7 @@ export class Doze{
  constructor(random=Math.random){this.random=random;this.reset();}
  reset(){this.active=false;this.time=0;this.lastClock=null;this.ear=null;this.side=0;this.sideTarget=0;}
  interval(range){return range[0]+this.random()*(range[1]-range[0]);}
+ twitch(side,dt=1/60){this.ear={side:side==='r'?'r':'l',at:this.time-Math.min(.025,dt/2),count:1,period:.12,amplitude:.7};return this.ear;}
  step(dt,{sleeping=false,reduced=false,now=null}={}){
   const zero={breath:0,wag:0,ear:null};
   if(!sleeping){this.reset();return zero;}
@@ -11,7 +12,7 @@ export class Doze{
   if(reduced){this.ear=null;return zero;}
   if(!this.active){this.active=true;this.nextEar=this.interval(DOZE.firstEar);this.nextSide=this.interval(DOZE.firstSide);this.breathPeriod=20+this.random()*8;this.swayPeriod=35+this.random()*25;}
   this.time+=advance;
-  if(this.time>=this.nextEar){this.ear={side:this.random()<.5?'l':'r',at:this.time-Math.min(.025,dt/2),count:1,period:.12,amplitude:.7};this.nextEar=this.time+this.interval(DOZE.earEvery);}
+  if(this.time>=this.nextEar){this.twitch(this.random()<.5?'l':'r',dt);this.nextEar=this.time+this.interval(DOZE.earEvery);}
   if(this.time>=this.nextSide){this.sideTarget=this.sideTarget?-this.sideTarget:(this.random()<.5?-1:1);this.nextSide=this.time+this.interval(DOZE.sideEvery);}
   this.side+=(this.sideTarget-this.side)*(1-Math.exp(-dt*.3));
   if(this.ear&&this.time-this.ear.at>.2)this.ear=null;

@@ -1,3 +1,4 @@
+import {Preview} from './preview.mjs';
 import {headContact} from './attention.mjs';
 import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
@@ -6,11 +7,12 @@ import {TouchInput} from './touch.mjs';
 import {drawHands,eyeRubHands,makeSkin,sampleSkin} from './hands.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
-const ctl=window.petControl||null;
+const ctl=null;
 const canvas=$('#avatar'),stage=$('#stage'),statusDot=$('#status'),statusWrap=$('#statusWrap');
 const motion=new Motion();motion.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const AXES=['yaw','pitch','roll'],MODES=['follow','idle','reduced','docked'];
-const local={size:240,docked:true,follow:true,idle:true,reduced:motion.reduced,pose:{yaw:0,pitch:0,roll:0}};
+const preview=new Preview(motion);
+const AXES=['yaw','pitch','roll'],MODES=['follow','idle','reduced'];
+const local={size:460,docked:true,follow:true,idle:true,reduced:motion.reduced,pose:{yaw:0,pitch:0,roll:0}};
 let renderer=null,rig=null,skin=makeSkin();
 const gestureCanvas=document.createElement('canvas');gestureCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';stage.append(gestureCanvas);
 const gestureCtx=gestureCanvas.getContext('2d');
@@ -21,7 +23,7 @@ function drawGesture(){
  const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),l=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],cur,l);return {x:r.left-rect.left+(q[0]+1)*r.width/2,y:r.top-rect.top+(1-q[1])*r.height/2};});
  const cx=r.left-rect.left+r.width/2,ledgeY=r.bottom-rect.top;
  g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=cur.rubEyes;
- drawHands(g,{cx,ledgeY,s:r.width,skin,hands:eyeRubHands([],{eyes,cx,ledgeY,size:r.width,mix:cur.rubEyes,phase:cur.rubPhase})});g.globalAlpha=1;
+ drawHands(g,{cx,ledgeY,s:r.width,skin,onlyHand:cur.rubHand,hands:eyeRubHands([],{eyes,cx,ledgeY,size:r.width,mix:cur.rubEyes,phase:cur.rubPhase,hand:cur.rubHand})});g.globalAlpha=1;
 }
 
 /* Status is a single dot; the text lives in the tooltip. */
@@ -48,13 +50,13 @@ function apply(s){
 /* User-initiated change: apply locally, then tell the desktop. */
 function send(patch){apply(patch);ctl?.set(patch);}
 
-if(ctl){$('#sizeCard').hidden=false;$('#docked').hidden=false;}
+$('#sizeCard').hidden=false;
 for(const el of document.querySelectorAll('input.range'))progress(el);
 
 /* Size */
 {
   const el=$('#size');let pending=null,raf=0;track(el);
-  el.addEventListener('input',()=>{progress(el);$('#sizeValue').textContent=el.value;pending=+el.value;if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(pending!=null){const v=pending;pending=null;local.size=v;ctl?.set({size:v});}});});
+  el.addEventListener('input',()=>{progress(el);$('#sizeValue').textContent=el.value;pending=+el.value;if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(pending!=null){const v=pending;pending=null;local.size=v;updatePreviewSize();}});});
 }
 
 /* Pose */
@@ -63,7 +65,7 @@ for(const el of document.querySelectorAll('input.range'))progress(el);
   const flush=()=>{raf=0;ctl?.set({follow:false,pose:{...local.pose}});};
   for(const k of AXES){
     const el=$('#'+k);track(el);
-    const commit=v=>{local.pose={...local.pose,[k]:v};motion.pose[k]=v;$('#'+k+'Value').textContent=fmt(v);
+    const commit=v=>{local.pose={...local.pose,[k]:v};motion.pose[k]=v;if(preview.active)preview.basePose={...local.pose};$('#'+k+'Value').textContent=fmt(v);
       if(local.follow){local.follow=false;motion.follow=false;$('#follow').setAttribute('aria-pressed','false');}
       if(ctl&&!raf)raf=requestAnimationFrame(flush);};
     el.addEventListener('input',()=>{progress(el);commit(+el.value);});
@@ -72,16 +74,16 @@ for(const el of document.querySelectorAll('input.range'))progress(el);
 }
 
 /* Actions */
-document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{motion.gesture(b.dataset.action);ctl?.action(b.dataset.action);}));
+document.querySelectorAll('[data-action]').forEach(b=>b.addEventListener('click',()=>{preview.stop();apply(local);motion.gesture(b.dataset.action);}));
 $('#reset').addEventListener('click',()=>{
   endTouch();
-  motion.reset();motion.follow=true;
+  preview.stop();motion.follow=true;
   apply({follow:true,pose:{yaw:0,pitch:0,roll:0}});
   ctl?.action('reset');
 });
 
 /* Modes */
-for(const k of MODES)$('#'+k).addEventListener('click',()=>send({[k]:$('#'+k).getAttribute('aria-pressed')!=='true'}));
+for(const k of MODES)$('#'+k).addEventListener('click',()=>{const value=$('#'+k).getAttribute('aria-pressed')!=='true';preview.stop();apply(local);send({[k]:value});});
 
 /* Stage background */
 $('#background').addEventListener('click',()=>{
@@ -99,7 +101,8 @@ $('#advToggle').addEventListener('click',()=>{
 });
 
 /* Stage sizing: canvas is always a square that fits the stage. */
-new ResizeObserver(()=>{const r=stage.getBoundingClientRect(),side=Math.max(120,Math.floor(Math.min(r.width,r.height)-24));const px=Math.min(side,640)+'px';canvas.style.width=canvas.style.height=px;const m=$('#masterCompare');if(m)m.style.width=m.style.height=px;}).observe(stage);
+function updatePreviewSize(){const r=stage.getBoundingClientRect(),side=Math.max(120,Math.min(local.size,Math.floor(Math.min(r.width,r.height)-24)));const px=Math.min(side,640)+'px';canvas.style.width=canvas.style.height=px;const m=$('#masterCompare');if(m)m.style.width=m.style.height=px;}
+new ResizeObserver(updatePreviewSize).observe(stage);
 
 /* Preview gaze: only while the cursor is over the stage. */
 let attentionPointer=null,wakeFlag=false;
@@ -113,6 +116,7 @@ const canvasPoint=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX
 canvas.addEventListener('pointerdown',e=>{
   if(e.button!==0||touchPointer!==null||!renderer)return;
   const p=canvasPoint(e);if(!renderer.hitTest(p.x,p.y))return;
+  if(preview.active){preview.release();apply(local);}
   touchPointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
   if(motion.attention.current.sleeping){wakeFlag=true;return;}
   const hit=renderer.pickHit(p.x,p.y),part=hit?.part;
@@ -137,7 +141,18 @@ $('#demoCue').addEventListener('click',async()=>{try{const r=await fetch('exampl
 
 /* Debug interface */
 let paused=false;
-window.bluefish={motion,get renderer(){return renderer;},get rig(){return rig;},pause(v=true){paused=v;},render(patch={}){renderer?.render({...motion.current,...patch});},playPromptSoulSegment(segment,duration=3){for(const a of fromPromptSoulSegment(segment,duration))motion.playCue(a.cue,a.delay);}};
+window.bluefish={motion,preview,get renderer(){return renderer;},get rig(){return rig;},pause(v=true){paused=v;},render(patch={}){renderer?.render({...motion.current,...patch});},playPromptSoulSegment(segment,duration=3){for(const a of fromPromptSoulSegment(segment,duration))motion.playCue(a.cue,a.delay);}};
+
+function syncPreview(){
+ $('#previewTransport').hidden=!preview.active;
+ for(const b of document.querySelectorAll('[data-preview]'))b.setAttribute('aria-pressed',String(preview.active&&preview.name===b.dataset.preview));
+ if(preview.active){for(const k of MODES)$('#'+k).setAttribute('aria-pressed',String(!!motion[k]));const t=$('#previewTimeline');t.max=preview.duration;if(!active.has(t.id))t.value=preview.time;progress(t);$('#previewTime').textContent=preview.time.toFixed(1)+' / '+preview.duration;$('#previewPlay').textContent=preview.playing?'暂停':'播放';$('#previewRate').value=String(preview.rate);}
+}
+document.querySelectorAll('[data-preview]').forEach(button=>button.addEventListener('click',()=>{endTouch();preview.select(button.dataset.preview);syncPreview();}));
+$('#previewPlay').addEventListener('click',()=>{if(preview.time>=preview.duration)preview.seek(0);preview.playing=!preview.playing;syncPreview();});
+$('#previewRate').addEventListener('change',e=>preview.rate=+e.target.value);
+const timeline=$('#previewTimeline');track(timeline);let pendingSeek=null,seekFrame=0;
+timeline.addEventListener('input',()=>{pendingSeek=+timeline.value;if(!seekFrame)seekFrame=requestAnimationFrame(()=>{seekFrame=0;preview.seek(pendingSeek);renderer?.render(motion.current);drawGesture();syncPreview();});});
 
 /* Initial state and live sync */
 if(ctl){ctl.onState(apply);try{apply(await ctl.getState());}catch(error){fail(error);}}else apply(local);
@@ -145,6 +160,7 @@ if(ctl){ctl.onState(apply);try{apply(await ctl.getState());}catch(error){fail(er
 try{
   const response=await fetch('assets/rig.json');if(!response.ok)throw Error('角色文件加载失败');rig=await response.json();
   renderer=await new Renderer(canvas,rig).init();skin=await sampleSkin();setStatus('ok','本地运行中');
+  const initial=new URLSearchParams(location.search);if(initial.has('preview')){try{preview.select(initial.get('preview'));if(initial.has('at')){preview.seek(+initial.get('at'));preview.playing=false;}syncPreview();}catch{}}
   const solo=$('#soloLayer');
   for(const layer of rig.layers){const opt=document.createElement('option');opt.value=layer.name;opt.textContent=layer.name+(layer.empty?'（空层）':'');solo.append(opt);}
   solo.addEventListener('change',()=>renderer.solo=solo.value||null);
@@ -157,8 +173,9 @@ try{
   let last=performance.now();
   function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
     const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
-    motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:!!touchInput.active});
-    wakeFlag=false;motion.step(dt);renderer.render(motion.current);drawGesture();}last=now;requestAnimationFrame(draw);}
+    if(preview.active){preview.step(dt);}else{motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,follow:motion.follow,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:!!touchInput.active});
+    wakeFlag=false;motion.step(dt);}
+    renderer.render(motion.current);drawGesture();syncPreview();}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());

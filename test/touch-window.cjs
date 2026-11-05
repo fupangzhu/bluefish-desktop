@@ -19,7 +19,7 @@ app.whenReady().then(async()=>{
   const evidence={};
   try{
     const {createServer}=await import(pathToFileURL(path.resolve(__dirname,'../server.mjs')));
-    server=createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    server=createServer({editor:true});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
     const base='http://127.0.0.1:'+server.address().port;
     win=new BrowserWindow({width:598,height:345,useContentSize:true,show:false,frame:false,transparent:true,webPreferences:{preload,backgroundThrottling:false,offscreen:true,contextIsolation:true,nodeIntegration:false,sandbox:true}});
     const wc=win.webContents;

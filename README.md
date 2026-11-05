@@ -16,9 +16,9 @@ Windows 任务栏桌宠
 
 <img src="docs/interaction.gif" width="100%" alt="揉头、入睡与点击唤醒的连贯演示">
 
-## 控制台
+## 动画编辑器 · 源码
 
-<img src="docs/console.png" width="100%" alt="角色控制台">
+<img src="docs/console.png" width="100%" alt="仅源码提供的动画编辑器，支持单手揉眼、侧瞥和睡眠细节预览">
 
 <details>
 <summary>从源码运行</summary>
@@ -28,6 +28,7 @@ git clone https://github.com/fupangzhu/bluefish-desktop.git
 cd bluefish-desktop
 npm ci
 npm start
+npm run editor  # 动画预览与调试
 ```
 
 </details>

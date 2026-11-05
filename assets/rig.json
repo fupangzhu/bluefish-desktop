@@ -426,7 +426,7 @@
     }
   ],
   "completion": {
-    "face": "Original visible skin; local interpolation under eyes/blush; inferred skin backing under bangs.",
+    "face": "Original face silhouette and alpha, with continuous harmonic skin repair beneath the eye cutouts; no row-wise striped fill.",
     "hair_back": "Original visible pixels plus inferred occluded blue backing.",
     "body": "Empty: complete head portrait has no body.",
     "mouth": "Empty: approved expression has no drawn mouth.",

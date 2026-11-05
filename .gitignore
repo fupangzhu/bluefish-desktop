@@ -17,3 +17,5 @@ assets/click-regression.json
 __pycache__/
 .DS_Store
 Thumbs.db
+
+.editor-cache/

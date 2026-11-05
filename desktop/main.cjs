@@ -6,15 +6,14 @@ app.setName('Bluefish Complete');
 app.setAppUserModelId('com.fupangzhu.bluefish');
 const APP_ICON=path.join(__dirname,'../assets/icon.ico');
 app.setPath('userData',path.join(app.getPath('appData'),'bluefish-complete'));
-const MENU_W=280,POSE_LIMIT={yaw:[-8,18],pitch:[-12,12],roll:[-10,10]};   // yaw left is shallower: the art flattens when turned left
-const ACTIONS=new Set(['blink','wink','nod','shakehead','happy','reset']);
-const COMMANDS=new Set(['open-console','toggle-visible','reset-position','quit','close-menu']);
+const MENU_W=280;
+const COMMANDS=new Set(['toggle-visible','quit','close-menu']);
 const SMOKE=process.env.BLUEFISH_SMOKE==='1';
 const alive=w=>!!w&&!w.isDestroyed();
 const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
-let win,menuWin,consoleWin,server,timer,topTimer,drag=null,tray,saveTimer;
+let win,menuWin,server,timer,topTimer,drag=null,tray,saveTimer;
 let lastSet=null,menuAnchor={x:0,y:0},menuShownAt=0,menuHeight=400;
-// Main owns the settings; every change is broadcast to pet, menu and console.
+// Main owns the settings; every change is broadcast to pet and menu.
 const state={size:dock.DEFAULT_SIZE,docked:true,follow:true,idle:true,reduced:false,pose:{yaw:0,pitch:0,roll:0}};
 const snapshot=()=>JSON.parse(JSON.stringify(state));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
@@ -62,7 +61,7 @@ app.whenReady().then(async()=>{
   }
   function broadcast(){
     const s=snapshot();
-    for(const w of [win,menuWin,consoleWin])if(alive(w))w.webContents.send('state',s);
+    for(const w of [win,menuWin])if(alive(w))w.webContents.send('state',s);
   }
   function updateTop(){
     if(!alive(win))return;
@@ -99,20 +98,11 @@ app.whenReady().then(async()=>{
     const before=JSON.stringify(state),wasDocked=state.docked,oldSize=state.size;
     if(typeof patch.size==='number'&&Number.isFinite(patch.size))state.size=dock.clampSize(patch.size);
     for(const k of ['docked','follow','idle','reduced'])if(typeof patch[k]==='boolean')state[k]=patch[k];
-    if(patch.pose&&typeof patch.pose==='object'){
-      for(const [k,lim] of Object.entries(POSE_LIMIT)){const v=patch.pose[k];if(typeof v==='number'&&Number.isFinite(v))state.pose[k]=clamp(v,lim[0],lim[1]);}
-      if(typeof patch.follow!=='boolean')state.follow=false;
-    }
     if(JSON.stringify(state)===before)return;
     if(state.size!==oldSize||state.docked!==wasDocked)relayout(wasDocked&&!state.docked);
     broadcast();save();
   }
   const sendPet=(channel,payload)=>{if(alive(win))win.webContents.send(channel,payload);};
-  function doAction(name){
-    if(!ACTIONS.has(name))return;
-    if(name==='reset')applyPatch({pose:{yaw:0,pitch:0,roll:0},follow:true});
-    sendPet('action',name);
-  }
   function toggleVisibility(){
     drag=null;hideMenu();
     if(win.isVisible())win.hide();else win.showInactive();
@@ -146,7 +136,7 @@ app.whenReady().then(async()=>{
   }
   function hideMenu(){if(alive(menuWin)&&menuWin.isVisible())menuWin.hide();}
   function createMenu(){
-    menuWin=new BrowserWindow({width:MENU_W,height:menuHeight,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,skipTaskbar:true,resizable:false,maximizable:false,minimizable:false,fullscreenable:false,show:false,title:'蓝色肥鱼菜单',webPreferences:{preload:path.join(__dirname,'control-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    menuWin=new BrowserWindow({width:MENU_W,height:menuHeight,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,skipTaskbar:true,resizable:false,maximizable:false,minimizable:false,fullscreenable:false,show:false,title:'蓝色肥鱼菜单',webPreferences:{preload:path.join(__dirname,'menu-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
     menuWin.setAlwaysOnTop(true,'screen-saver');
     harden(menuWin.webContents);
     menuWin.on('blur',()=>{
@@ -164,23 +154,9 @@ app.whenReady().then(async()=>{
     placeMenu();menuWin.webContents.send('state',snapshot());
     menuShownAt=Date.now();menuWin.show();menuWin.moveTop();menuWin.focus();
   }
-  function openConsole(){
-    if(alive(consoleWin)){if(consoleWin.isMinimized())consoleWin.restore();consoleWin.show();consoleWin.focus();return consoleWin;}
-    consoleWin=new BrowserWindow({width:980,height:660,minWidth:760,minHeight:520,title:'蓝色肥鱼',icon:APP_ICON,titleBarStyle:'hidden',titleBarOverlay:{color:'#f2f2f2',symbolColor:'#161616',height:44},backgroundColor:'#f2f2f2',show:false,webPreferences:{preload:path.join(__dirname,'control-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
-    consoleWin.removeMenu();
-    harden(consoleWin.webContents);
-    const w=consoleWin;
-    w.once('ready-to-show',()=>{if(alive(w))w.show();});
-    setTimeout(()=>{if(alive(w)&&!w.isVisible())w.show();},1500);
-    w.on('closed',()=>{if(consoleWin===w)consoleWin=null;});
-    w.loadURL(base+'/').catch(()=>{});
-    return w;
-  }
   function runCommand(name){
     switch(name){
-      case 'open-console':hideMenu();openConsole();break;
       case 'toggle-visible':toggleVisibility();break;
-      case 'reset-position':hideMenu();resetPosition();break;
       case 'quit':app.quit();break;
       case 'close-menu':hideMenu();break;
     }
@@ -188,7 +164,7 @@ app.whenReady().then(async()=>{
 
   // ---- IPC (every sender is validated) ------------------------------------------------
   const petOwned=e=>alive(win)&&e.sender===win.webContents;
-  const ctlOwned=e=>(alive(menuWin)&&e.sender===menuWin.webContents)||(alive(consoleWin)&&e.sender===consoleWin.webContents);
+  const ctlOwned=e=>alive(menuWin)&&e.sender===menuWin.webContents;
   ipcMain.on('interactive',(e,hit)=>{if(!petOwned(e)||drag)return;win.setIgnoreMouseEvents(hit!==true,{forward:true});});
   ipcMain.on('drag',(e,on)=>{
     if(!petOwned(e))return;
@@ -203,7 +179,6 @@ app.whenReady().then(async()=>{
   });
   ipcMain.handle('ctl:get-state',e=>ctlOwned(e)?snapshot():null);
   ipcMain.on('ctl:set',(e,patch)=>{if(ctlOwned(e))applyPatch(patch);});
-  ipcMain.on('ctl:action',(e,name)=>{if(ctlOwned(e)&&typeof name==='string')doAction(name);});
   ipcMain.on('ctl:command',(e,name)=>{if(ctlOwned(e)&&COMMANDS.has(name))runCommand(name);});
   ipcMain.on('ctl:fit',(e,height)=>{
     if(!ctlOwned(e)||!alive(menuWin)||e.sender!==menuWin.webContents||typeof height!=='number'||!Number.isFinite(height))return;
@@ -248,7 +223,7 @@ app.whenReady().then(async()=>{
     const p=screen.getCursorScreenPoint();
     if(drag)dragStep(p);
     const r=win.getContentBounds(),area=screen.getDisplayMatching(r).workArea;
-    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
+    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
   },33);
   // Keep the docked pet above the taskbar, which also sits in the topmost band.
   topTimer=setInterval(()=>{
@@ -293,7 +268,9 @@ app.whenReady().then(async()=>{
         showMenuAt({x:Math.round(wa.x+wa.width*.5),y:Math.round(wa.y+wa.height*.25)});
         await sleep(600);evidence.menuBounds=menuWin.getBounds();await shot(menuWin.webContents,'smoke-menu.png');
         hideMenu();
-        openConsole();await sleep(1500);evidence.consoleBounds=consoleWin.getBounds();await shot(consoleWin.webContents,'smoke-console.png');
+        evidence.editorStatus=await win.webContents.executeJavaScript('fetch("/").then(r=>r.status)');
+        evidence.menuAnimationButtons=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-action]").length');
+        evidence.menuEditorEntries=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-command=open-console]").length');
       }catch(e){evidence.error=String(e&&e.stack||e);console.error(e);}
       try{fs.writeFileSync(path.join(folder,'desktop-complete-smoke.json'),JSON.stringify(evidence,null,2));}catch(e){console.error(e);}
       app.quit();

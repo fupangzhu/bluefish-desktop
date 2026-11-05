@@ -6,8 +6,8 @@ export class Wake{
  reset(){this.finish();this.protectUntil=-Infinity;this.requestAt=0;}
  finish(){this.preset=null;this.elapsed=0;this.started=false;}
  get active(){return this.preset!==null;}
- pick(protectedWake=false){const raw=this.random(),draw=Math.max(0,Math.min(1-Number.EPSILON,Number.isFinite(raw)?raw:0))*(protectedWake?WAKE.normal+WAKE.rub:1);return draw<WAKE.normal*.5?'gentle':draw<WAKE.normal*.8?'stretch':draw<WAKE.normal?'lookaround':draw<WAKE.normal+WAKE.rub?'rubeyes':'peek';}
- start(preset=this.pick()){this.preset=preset;this.elapsed=0;this.started=false;}
+ pick(protectedWake=false){const raw=this.random(),draw=Math.max(0,Math.min(1-Number.EPSILON,Number.isFinite(raw)?raw:0))*(protectedWake?WAKE.normal+WAKE.rub:1);this.nextRubHand=draw<WAKE.normal+WAKE.rub*.5?0:1;return draw<WAKE.normal*.5?'gentle':draw<WAKE.normal*.8?'stretch':draw<WAKE.normal?'lookaround':draw<WAKE.normal+WAKE.rub?'rubeyes':'peek';}
+ start(preset=this.pick(),hand=this.nextRubHand??0){this.preset=preset;this.rubHand=hand===1?1:0;this.elapsed=0;this.started=false;}
  request(now=0){
   const protectedWake=this.preset==='peek'||now<=this.protectUntil;this.requestAt=now;this.start(this.pick(protectedWake));
   if(this.preset==='peek'){this.protectUntil=now+WAKE.peekDuration+WAKE.retryWindow;return false;}return true;
@@ -29,7 +29,7 @@ export class Wake{
   if(this.preset==='rubeyes'){
    const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);},t=this.elapsed;
    const hands=smooth((t-1.25)/.8)*(1-smooth((t-3.15)/.7));
-   return {...zero,pitch:-1.4*env,eyeCap:smooth((t-3.2)/1.6),rubEyes:hands,rubPhase:t*18,rubLift:smooth((t-1.3)/.8)*(1-smooth((t-4.7)/.5))*.075};
+   return {...zero,pitch:-1.4*env,eyeCap:smooth((t-3.2)/1.6),rubEyes:hands,rubHand:this.rubHand,rubPhase:t*18,rubLift:smooth((t-1.3)/.8)*(1-smooth((t-4.7)/.5))*.075};
   }
   if(this.preset==='gentle')return {...zero,pitch:-1.8*env,roll:.8*Math.sin(u*Math.PI*2)*env,wag:3*Math.sin(u*Math.PI*4)*env,ears:.12*env};
   if(this.preset==='stretch')return {...zero,pitch:-4*env,roll:2*Math.sin(u*Math.PI*2)*env,wag:8*Math.sin(u*Math.PI*6)*env,ears:.45*env};

@@ -3,7 +3,7 @@ const REPO=path.resolve(__dirname,'..'),OUT=path.join(REPO,'.test-output/sleep-h
 const preload=path.join(OUT,'preload.cjs');fs.writeFileSync(preload,`const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('pet',{onState:cb=>ipcRenderer.on('state',(_e,p)=>cb(p)),onPointer:()=>{},onAction:()=>{},setInteractive:()=>{},drag:()=>{},menu:()=>{},zoom:()=>{}});`);
 app.commandLine.appendSwitch('force-device-scale-factor','1.5');const wait=ms=>new Promise(r=>setTimeout(r,ms));let win,server;
 app.whenReady().then(async()=>{const evidence={};try{
- const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer({editor:true});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  win=new BrowserWindow({width:920,height:506,show:false,frame:false,transparent:true,webPreferences:{preload,offscreen:true,backgroundThrottling:false,contextIsolation:true,sandbox:true}});const wc=win.webContents,js=s=>wc.executeJavaScript(s);
  await win.loadURL(base+'/overlay.html');for(let i=0;i<200;i++){if(await js('!!window.bluefish?.renderer'))break;await wait(100);}assert.ok(await js('!!window.bluefish?.renderer'));
  const shot=async name=>fs.writeFileSync(path.join(OUT,name+'.png'),(await wc.capturePage()).toPNG());

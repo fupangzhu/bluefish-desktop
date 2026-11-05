@@ -53,3 +53,15 @@ select:hover{background:var(--fill-hover)}
   html{scrollbar-width:none}
   html::-webkit-scrollbar{display:none}
 }
+
+/* Deterministic animation preview, kept in the source editor only. */
+.preview-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.preview-button{min-height:40px;border:0;border-radius:var(--r-xs);background:var(--fill);color:var(--ink);font:500 14px var(--sans);cursor:pointer;padding:8px 12px}
+.preview-button:hover{background:var(--fill-hover)}
+.preview-button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+.preview-controls{display:flex;align-items:center;gap:8px;margin-top:8px}
+.preview-controls output{flex:1;font-size:14px;text-align:center}
+.preview-controls select{width:78px;font-size:14px;height:40px}
+.rail{scrollbar-width:thin;scrollbar-color:#d4d4d4 transparent}
+.rail::-webkit-scrollbar{display:block;width:5px}
+.rail::-webkit-scrollbar-thumb{background:#d4d4d4;border-radius:4px}

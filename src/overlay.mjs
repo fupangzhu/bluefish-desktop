@@ -66,9 +66,9 @@ function drawHandsFrame(out){
   const cur=motion.current;let hands=out.hands;
   if(cur?.rubEyes>0){
     const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),layer=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],{...cur,roll:cur.roll+out.roll},layer);return {x:pos.left+(q[0]+1)*L.s/2,y:pos.top+(1-q[1])*L.s/2};});
-    hands=eyeRubHands(hands,{eyes,cx:L.W/2,ledgeY:L.ledgeY,size:L.s,mix:cur.rubEyes,phase:cur.rubPhase});
+    hands=eyeRubHands(hands,{eyes,cx:L.W/2,ledgeY:L.ledgeY,size:L.s,mix:cur.rubEyes,phase:cur.rubPhase,hand:cur.rubHand});
   }
-  drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands,skin,grip:L.grip});
+  drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands,skin,grip:L.grip,onlyHand:L.docked?null:cur?.rubHand});
 }
 function handsAlpha(x,y){
   if(!L.docked)return 0;
@@ -146,13 +146,13 @@ function frame(now){
     let near=false;if(fresh)near=Math.hypot(pointer.x-cx,pointer.y-cy)<Math.max(NEAR_RATIO*s,NEAR_MIN);
     const follow=state.follow;
     const hx=fresh?(pointer.x-pos.left)/s:.5,hy=fresh?(pointer.y-pos.top)/s:.5;
-    const attention=motion.attention.update(dt,{now:now/1000,reduced:state.reduced,x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
+    const attention=motion.attention.update(dt,{now:now/1000,reduced:state.reduced,follow:state.follow,innerSide:pointer?.innerSide,x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
       overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
       hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:pokeFlag||!!touchInput.active});
     const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:!attention.sleeping&&(attention.attentive||!follow),poke:!attention.sleeping&&(pokeFlag||!!touchInput.active),docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
     pokeFlag=false;wakeFlag=false;
     motion.override=follow?out.override:null;
-    if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active)motion.gesture(out.gesture);
+    if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active&&!attention.reluctant?.active)motion.gesture(out.gesture);
     const cur=motion.step(dt);
     place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
     renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);
