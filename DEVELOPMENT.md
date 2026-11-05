@@ -25,7 +25,7 @@ tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 107 项）+ Electron 交互回归
+test/           node --test 单测（当前 117 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求

@@ -1,17 +1,31 @@
-// One weighted preset per actual sleep-to-awake transition, never per hover/frame.
+// One draw per sleeping click. A peek never clears the Sleep latch.
+export const WAKE={normal:.6,rub:.25,peek:.15,peekDuration:2.4,retryWindow:15};
+const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
 export class Wake{
  constructor(random=Math.random){this.random=random;this.reset();}
- reset(){this.preset=null;this.elapsed=0;this.started=false;}
+ reset(){this.finish();this.protectUntil=-Infinity;this.requestAt=0;}
+ finish(){this.preset=null;this.elapsed=0;this.started=false;}
  get active(){return this.preset!==null;}
- start(){const draw=this.random();this.preset=draw<.12?'rubeyes':draw<.56?'gentle':draw<.82?'stretch':'lookaround';this.elapsed=0;this.started=false;}
- step(dt,{eyesOpen=false,reduced=false}={}){
+ pick(protectedWake=false){const raw=this.random(),draw=Math.max(0,Math.min(1-Number.EPSILON,Number.isFinite(raw)?raw:0))*(protectedWake?WAKE.normal+WAKE.rub:1);return draw<WAKE.normal*.5?'gentle':draw<WAKE.normal*.8?'stretch':draw<WAKE.normal?'lookaround':draw<WAKE.normal+WAKE.rub?'rubeyes':'peek';}
+ start(preset=this.pick()){this.preset=preset;this.elapsed=0;this.started=false;}
+ request(now=0){
+  const protectedWake=this.preset==='peek'||now<=this.protectUntil;this.requestAt=now;this.start(this.pick(protectedWake));
+  if(this.preset==='peek'){this.protectUntil=now+WAKE.peekDuration+WAKE.retryWindow;return false;}return true;
+ }
+ step(dt,{eyesOpen=false,reduced=false,clock=null}={}){
   const zero={yaw:0,pitch:0,roll:0,gx:0,wag:0,ears:0};
   if(!this.active)return zero;
-  if(!this.started){if(!eyesOpen&&this.preset!=='rubeyes')return zero;this.started=true;}
+  if(!this.started){if(!eyesOpen&&this.preset!=='rubeyes'&&this.preset!=='peek')return zero;this.started=true;}
   this.elapsed+=Math.max(0,Math.min(.1,Number.isFinite(dt)?dt:0));
-  const duration=reduced?.35:this.preset==='rubeyes'?5.2:this.preset==='gentle'?2.2:this.preset==='stretch'?2.8:3;
+  const duration=this.preset==='peek'?(reduced?1.4:WAKE.peekDuration):reduced?.35:this.preset==='rubeyes'?5.2:this.preset==='gentle'?2.2:this.preset==='stretch'?2.8:3;
   const u=Math.min(1,this.elapsed/duration),env=Math.sin(Math.PI*u);
-  if(u>=1){this.reset();return zero;}if(reduced)return zero;
+  if(u>=1){if(this.preset==='peek')this.protectUntil=(Number.isFinite(clock)?clock:this.requestAt+duration)+WAKE.retryWindow;this.finish();return zero;}
+  if(this.preset==='peek'){
+   const t=this.elapsed,scale=reduced?1.4/WAKE.peekDuration:1,phase=t/scale;
+   const ear=smooth(phase/.4)*(1-smooth((phase-1.35)/.9)),eye=smooth((phase-.25)/.45)*(1-smooth((phase-1.3)/.75));
+   return {...zero,peekEye:.22*eye,peekEar:ear*(reduced?.22:1)};
+  }
+  if(reduced)return zero;
   if(this.preset==='rubeyes'){
    const smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);},t=this.elapsed;
    const hands=smooth((t-1.25)/.8)*(1-smooth((t-3.15)/.7));

@@ -4,7 +4,7 @@ const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const smooth=n=>{n=clamp(n,0,1);return n*n*(3-2*n);};
 // Coordinates are local CSS pixels; movement is measured before head deformation.
 export class Attention{
- constructor(random=Math.random){this.random=random;this.sleepController=new Sleep(()=>this.random());this.reset();}
+ constructor(random=Math.random,requestWake=()=>true){this.random=random;this.requestWake=requestWake;this.sleepController=new Sleep(()=>this.random());this.reset();}
  reset(){
   this.sleepController.reset();this.idleTime=0;this.lastInteraction=0;this.lastClock=null;
   this.time=0;this.last=null;this.lastMove=-100;this.lastNear=0;this.rubAge=0;this.rubMix=0;
@@ -68,7 +68,8 @@ export class Attention{
   const active=!!input.wake||!!input.poke||!!input.blocked||(moved&&near);
   if(active)this.lastInteraction=this.idleTime;
   const inactiveFor=this.idleTime-this.lastInteraction;
-  const sleep=this.sleepController.update(dt,{idleFor:inactiveFor,active,wake:!!input.wake,eligible:(this.droop>.9&&!rubbing&&!resting)||inactiveFor>=120,reduced:!!input.reduced});
+  const wake=!!input.wake&&(!this.sleepController.sleeping||this.requestWake(this.idleTime));
+  const sleep=this.sleepController.update(dt,{idleFor:inactiveFor,active,wake,eligible:(this.droop>.9&&!rubbing&&!resting)||inactiveFor>=120,reduced:!!input.reduced});
   return this.current={sleep:sleep.depth,sleepClosure:sleep.closure,sleeping:sleep.sleeping,wakeId:sleep.wakeId,woke:sleep.woke,inactiveFor,gazeWeight:this.gazeWeight,rub:this.rubMix,relax,eyeCap:Math.min(1-relax*this.rubMix,!sleep.sleeping&&sleep.depth>0?1:1-.32*this.droop,1-sleep.closure),droop:this.droop,
    yaw,roll,pitch,ahogeWag,reaction:this.reaction,
    attentive:!sleep.sleeping&&near&&(this.time-this.lastMove<ATTENTION.nearGrace||rubbing),rubbing,resting,interacting:!!input.blocked||!!input.poke};

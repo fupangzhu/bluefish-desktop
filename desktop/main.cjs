@@ -47,7 +47,9 @@ app.whenReady().then(async()=>{
   }
   const start=initialBounds();
   lastSet={...start};
-  win=new BrowserWindow({...start,minWidth:start.width,minHeight:start.height,maxWidth:start.width,maxHeight:start.height,title:'蓝色肥鱼',icon:APP_ICON,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,resizable:false,maximizable:false,fullscreenable:false,skipTaskbar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win=new BrowserWindow({...start,minWidth:start.width,minHeight:start.height,maxWidth:start.width,maxHeight:start.height,title:'蓝色肥鱼',icon:APP_ICON,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,resizable:false,maximizable:false,fullscreenable:false,skipTaskbar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  win.on('show',()=>{if(alive(win))win.webContents.setBackgroundThrottling(false);});
+  win.on('hide',()=>{if(alive(win))win.webContents.setBackgroundThrottling(true);});
 
   function save(){
     if(SMOKE)return;
@@ -286,6 +288,7 @@ app.whenReady().then(async()=>{
         await sleep(300);await shot(win.webContents,'smoke-pet-docked.png');
         try{evidence.hitTest=await win.webContents.executeJavaScript('(()=>{const b=window.bluefish,p=b.position(),s=b.state.size;return {head:b.hitTest(p.left+s*.5,p.top+s*.46),gutter:b.hitTest(1,1)};})()');}catch(e){evidence.hitTest={error:e.message};}
         evidence.alwaysOnTop=win.isAlwaysOnTop();evidence.tray=!tray.isDestroyed();
+        evidence.backgroundThrottlingVisible=win.webContents.getBackgroundThrottling();win.hide();await sleep(100);evidence.backgroundThrottlingHidden=win.webContents.getBackgroundThrottling();win.showInactive();
         const wa=screen.getPrimaryDisplay().workArea;
         showMenuAt({x:Math.round(wa.x+wa.width*.5),y:Math.round(wa.y+wa.height*.25)});
         await sleep(600);evidence.menuBounds=menuWin.getBounds();await shot(menuWin.webContents,'smoke-menu.png');

@@ -30,7 +30,7 @@ app.whenReady().then(async()=>{const evidence={};try{
   const asleep=await snap();await shot(mode+'-asleep');assert.ok(asleep.sleeping&&asleep.sleep===1&&asleep.left===0&&asleep.right===0&&asleep.ear<-.99);assert.ok(asleep.y-droop.y>400*(docked?.075:.02));
   for(let i=0;i<40;i++){await js(`(()=>{const b=bluefish,p=b.position(),s=b.state.size;b.setPointer({x:p.left+s*(.5+Math.sin(${i}*.2)*.12),y:p.top+s*.44,gx:.3,gy:0});})()`);await sleep(40);}
   assert.equal((await snap()).sleeping,true,'hover or rub woke the sleeper');
-  await js(`bluefish.motion.wake.random=()=>${docked?.6:.2};true`);
+  await js(`bluefish.motion.wake.random=()=>${docked?.4:.1};true`);
   const hit=await js('(()=>{const b=bluefish,p=b.position(),s=b.state.size,x=Math.round(p.left+s*.5),y=Math.round(p.top+s*.35);return {x,y,hit:b.hitTest(x,y)};})()');assert.ok(hit.hit,'wake click missed the head');
   wc.sendInputEvent({type:'mouseMove',x:hit.x,y:hit.y});wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,x:hit.x,y:hit.y});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,x:hit.x,y:hit.y});await sleep(80);
   assert.equal((await snap()).sleeping,false,'click did not wake the sleeper');

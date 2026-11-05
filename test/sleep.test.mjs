@@ -31,7 +31,7 @@ test('waking reopens eyes before raising the head, and restarts the idle lottery
 });
 
 test('desktop wall time counts hidden intervals; far movement does not wake a sleeper',()=>{
- const m=new Motion(()=>1);m.idle=false;const input={x:900,y:900,size:240,near:false};
+ const m=new Motion(()=>1);m.wake.random=()=>.1;m.idle=false;const input={x:900,y:900,size:240,near:false};
  for(let i=0;i<30*60;i++){m.attention.update(dt,{...input,now:i*dt});m.step(dt);}
  m.attention.update(dt,{...input,now:119});assert.equal(m.attention.current.sleeping,false);
  m.attention.update(dt,{...input,now:599});assert.equal(m.attention.current.sleeping,false);

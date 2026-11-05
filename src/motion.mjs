@@ -43,22 +43,24 @@ export function fromPromptSoulSegment(segment,duration=3){
   });
 }
 export class Motion {
-  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.attention=new Attention(random);this.eyelids=new Eyelids(random);this.wake=new Wake(random);this.doze=new Doze(random);this.lastWakeId=0;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears','wag'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:k==='wag'?8:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.wakePending=false;this.wakeReadyAt=null;this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
+  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.wake=new Wake(random);this.attention=new Attention(random,now=>this.wake.request(now));this.eyelids=new Eyelids(random);this.doze=new Doze(random);this.lastWakeId=0;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears','wag'].map(k=>[k,new Spring(0,k==='hair'?6:k==='droop'?5:k==='ears'?5.5:k==='wag'?8:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.wakePending=false;this.wakeReadyAt=null;this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
   setGaze(x,y){if(Number.isFinite(x)&&Number.isFinite(y))this.gaze={x:clamp(x,-1,1),y:clamp(y,-1,1)};}
   blink(){this.blinkAt=this.time;this.eyelids.blink(this.time);}
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}
   playCue(cue,delay=0){const c=validateCue(cue);if(!Number.isFinite(delay)||delay<0||delay>30)throw Error('无效延迟');this.queue=this.queue.filter(q=>q.end>this.time);if(this.queue.length>=24)throw Error('动作队列已满');this.queue.push({...c,start:this.time+delay,end:this.time+delay+c.duration});}
   reset(){this.queue=[];this.touch.reset();this.attention.reset();this.wakePending=false;this.wakeReadyAt=null;this.eyelids.reset();this.wake.reset();this.doze.reset();this.lastWakeId=0;this.springs.ears.value=0;this.springs.ears.velocity=0;this.springs.wag.value=0;this.springs.wag.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
-  blocksTravel(attention=this.attention.current){return !!attention.sleeping||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
+  blocksTravel(attention=this.attention.current){return !!attention.sleeping||this.wake.active||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
   step(dt){
     this.time+=clamp(dt,0,0.1);const t=this.time,attention=this.attention.current,sleep=attention.sleep||0,touch=this.touch.step(dt,this.reduced,this.idle&&!attention.sleeping&&sleep<.1);
     if(this.idle&&!this.reduced&&!attention.sleeping&&sleep<.1&&t>=this.nextBlink){this.blink();this.nextBlink=t+3.2+this.random()*4;}
-    const dream=this.doze.step(dt,{sleeping:this.idle&&!!attention.sleeping&&sleep>.7,reduced:this.reduced});
-    if(dream.ear){const side=dream.ear.side;touch[side==='l'?'earTwitchL':'earTwitchR']=dream.ear;touch[side==='l'?'earFoldL':'earFoldR']=0;}
+    const dream=this.doze.step(dt,{sleeping:this.idle&&!!attention.sleeping&&sleep>.7,reduced:this.reduced,now:this.attention.idleTime});
+    if(dream.ear&&this.wake.preset!=='peek'){const side=dream.ear.side;touch[side==='l'?'earTwitchL':'earTwitchR']=dream.ear;touch[side==='l'?'earFoldL':'earFoldR']=0;}
     const pet=(attention.rub||0)*(1-sleep);
     const lids=this.eyelids.sample(t,attention);
-    if(attention.wakeId!==this.lastWakeId){this.lastWakeId=attention.wakeId;this.wake.start();}
-    const wakePose=this.wake.step(dt,{eyesOpen:!attention.sleepClosure&&lids.left>=.99&&lids.right>=.99,reduced:this.reduced});
+    if(attention.wakeId!==this.lastWakeId){this.lastWakeId=attention.wakeId;if(!this.wake.active||this.wake.preset==='peek')this.wake.start('gentle');}
+    const wakePose=this.wake.step(dt,{eyesOpen:!attention.sleepClosure&&lids.left>=.99&&lids.right>=.99,reduced:this.reduced,clock:this.attention.idleTime});
+    const peeking=this.wake.preset==='peek';
+    if(peeking){touch.earTwitchL=touch.earTwitchR=null;touch.earFoldL=touch.earFoldR=0;}
     // Finish reopening both eyes before resuming gaze turns or taskbar travel.
     if(attention.interacting){this.wakePending=false;this.wakeReadyAt=null;}
     else if((attention.rubbing&&attention.reaction==='sleepy')||attention.resting||attention.sleeping||attention.sleepClosure>0){this.wakePending=true;this.wakeReadyAt=null;}
@@ -75,7 +77,7 @@ export class Motion {
     if(this.idle&&!this.reduced){target.pitch+=Math.sin(t*1.35)*0.65*(1-pet);target.roll+=Math.sin(t*0.65)*0.45*(1-pet);}
     if(pet){for(const key of ['yaw','pitch','roll'])target[key]=this.pose[key]+(target[key]-this.pose[key])*(1-pet)+(this.reduced?0:attention[key]||0)*pet;}
     if(sleep){target.yaw*=1-sleep;target.roll*=1-sleep;target.pitch=target.pitch*(1-sleep)+3*sleep;}
-    if(this.wake.active){for(const key of ['yaw','pitch','roll'])target[key]=this.pose[key]+(target[key]-this.pose[key])*.2+wakePose[key];}
+    if(this.wake.active&&!peeking){for(const key of ['yaw','pitch','roll'])target[key]=this.pose[key]+(target[key]-this.pose[key])*.2+wakePose[key];}
     for(const key of ['yaw','pitch','roll'])this.springs[key].frequency=pet>.1||sleep>.1?3.2:11;
     const gt=t-this.gestureAt,env=!this.wake.active&&gt>=0&&gt<1.8?Math.sin(gt/1.8*Math.PI):0;
     if(this.gestureName==='nod')target.pitch+=Math.sin(gt*10)*6*env;
@@ -100,6 +102,7 @@ export class Motion {
     };
     if(Number.isFinite(wakePose.eyeCap)){p.ParamEyeLOpen=p.ParamEyeROpen=wakePose.eyeCap;}
     if(this.gestureName==='wink'&&gt>=0&&gt<.6)p.ParamEyeLOpen*=Math.abs(Math.cos(gt/.6*Math.PI));
-    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018):0,...touch};
+    if(peeking){p.ParamEyeLOpen=wakePose.peekEye||0;p.ParamEyeROpen=0;}
+    return this.current={yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),earMoodL:peeking?-1+1.45*(wakePose.peekEar||0):undefined,earSleepL:peeking?1-(wakePose.peekEar||0):undefined,sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018):0,...touch};
   }
 }

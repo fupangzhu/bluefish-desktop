@@ -9,7 +9,7 @@ export function flick(t,ear){
 export function deformEar(x,y,layer,s){
  const side=layer.name==='ear_l'?-1:1,root=layer.pivot,dx=x-root[0],dy=y-root[1];
  const u=clamp(side*dx/((layer.box[2]-layer.box[0])*.55),0,1),weight=u*u*(3-2*u);
- const sleep=clamp(s.sleep||0,0,1),mood=clamp(s.earMood||0,-1,1),ear=side<0?s.earTwitchL:s.earTwitchR;
+ const sleep=clamp((side<0?s.earSleepL:s.earSleepR)??s.sleep??0,0,1),mood=clamp((side<0?s.earMoodL:s.earMoodR)??s.earMood??0,-1,1),ear=side<0?s.earTwitchL:s.earTwitchR;
  const legacy=clamp((side<0?s.earFoldL:s.earFoldR)||0,0,1);
  let base=38*Math.max(0,-mood)-8*Math.max(0,mood)+16*sleep;
  if(!base&&!ear&&!legacy)return [x,y];
