@@ -3,14 +3,20 @@ import {deformEar} from './ears.mjs';
 import {AHOGE_REST,AHOGE_COLORS,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
-const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;uniform vec4 lidShape;uniform vec2 lidMotion;uniform float irisGate;uniform float irisCorner;uniform vec2 eyeGaze;uniform float irisWidth;
+const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;uniform vec4 lidShape;uniform vec2 lidMotion;uniform float irisGate;uniform float irisCorner;uniform vec2 eyeGaze;uniform float sideEye;uniform vec2 glanceShape;
 void main(){
  vec4 color=texture2D(image,tex);
  if(eyeOpen>=0.){
   vec2 p=crop.xy+tex*crop.zw-eye.xy;float cs=cos(eye.z),sn=sin(eye.z),xx=cs*p.x+sn*p.y,yy=-sn*p.x+cs*p.y;
-  vec2 local=vec2((xx-eyeGaze.x)/irisWidth,yy-eyeGaze.y);vec2 source=eye.xy+vec2(cs*local.x-sn*local.y,sn*local.x+cs*local.y);color=texture2D(image,(source-crop.xy)/crop.zw);
+  vec2 local=vec2(xx-eyeGaze.x,yy-eyeGaze.y);vec2 source=eye.xy+vec2(cs*local.x-sn*local.y,sn*local.x+cs*local.y);color=texture2D(image,(source-crop.xy)/crop.zw);
   float r=lidShape.x,x=clamp(xx,-r,r),arc=lidShape.y*(1.-x*x/(r*r)),profile=1.-irisCorner*min(1.,xx*xx/(r*r)),top=arc-lidMotion.x*profile,bottom=arc+lidMotion.y*profile,e=max(.0003,aa*.5);
   float mask=smoothstep(top-e,top+e,yy)*(1.-smoothstep(bottom-e,bottom+e,yy))*irisGate*mix(1.,1.-smoothstep(r-e,r+e,abs(xx)),irisCorner);color*=mask;
+  // The glance iris has its own rounded ellipse boundary; a lens-shaped bottom
+  // mask would pinch this off-centre eye into the old triangular shard.
+  float depth=max(glanceShape.y,.00001),ellipse=length(vec2((xx-eyeGaze.x)/glanceShape.x,(yy-arc)/depth));
+  float ellipseAA=e/min(glanceShape.x,depth),glanceAlpha=(1.-smoothstep(1.-ellipseAA,1.+ellipseAA,ellipse))*smoothstep(top-e,top+e,yy)*irisGate;
+  vec3 glanceBlue=mix(vec3(0.,.61,.89),vec3(.18,.77,.96),smoothstep(.25,1.,(yy-arc)/depth));
+  color=mix(color,vec4(glanceBlue*glanceAlpha,glanceAlpha),sideEye);
   float slope=-2.*x*(lidShape.y-lidMotion.x*irisCorner)/(r*r);float distanceToLid=length(vec2(xx-x,(yy-top)/sqrt(1.+slope*slope)));float ink=(1.-smoothstep(lidShape.z-e,lidShape.z+e,distanceToLid))*lidShape.w;
   color=vec4(vec3(.10980392,.46666667,.75294118)*ink,ink)+color*(1.-ink);
  }
@@ -48,7 +54,7 @@ export class Renderer{
     this.program=g.createProgram();g.attachShader(this.program,compile(g.VERTEX_SHADER,VERT));g.attachShader(this.program,compile(g.FRAGMENT_SHADER,FRAG));g.linkProgram(this.program);if(!g.getProgramParameter(this.program,g.LINK_STATUS))throw Error(g.getProgramInfoLog(this.program));g.useProgram(this.program);
     this.buffer=g.createBuffer();g.bindBuffer(g.ARRAY_BUFFER,this.buffer);
     for(const [name,offset] of [['pos',0],['uv',8]]){const loc=g.getAttribLocation(this.program,name);g.enableVertexAttribArray(loc);g.vertexAttribPointer(loc,2,g.FLOAT,false,16,offset);}
-    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye','aa','lidShape','lidMotion','irisGate','irisCorner','eyeGaze','irisWidth'].map(k=>[k,g.getUniformLocation(this.program,k)]));
+    this.uniform=Object.fromEntries(['opacity','eyeOpen','crop','eye','aa','lidShape','lidMotion','irisGate','irisCorner','eyeGaze','sideEye','glanceShape'].map(k=>[k,g.getUniformLocation(this.program,k)]));
     g.enable(g.BLEND);g.blendFunc(g.ONE,g.ONE_MINUS_SRC_ALPHA);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);this.layers=[];this.byName=new Map();this.stats={drawCalls:0,vertices:0,frameMs:0};
   }
   async init(){
@@ -75,7 +81,7 @@ export class Renderer{
       const image=document.createElement('canvas');image.width=x1-x0;image.height=y1-y0;
       const ctx=image.getContext('2d'),dir=eye.side==='l'?1:-1;
       ctx.translate(eye.center[0]-x0,eye.center[1]-y0);ctx.rotate(eye.tilt);
-      ctx.strokeStyle='#234c70';ctx.lineWidth=18;ctx.lineCap='round';ctx.lineJoin='round';
+      ctx.strokeStyle='#234c70';ctx.lineWidth=27;ctx.lineCap='round';ctx.lineJoin='round';
       ctx.beginPath();ctx.moveTo(-dir*60,-70);ctx.lineTo(dir*62,0);ctx.lineTo(-dir*60,70);ctx.stroke();
       this.addLayer({...meta,name:`eye_${eye.side}_pain`},image);
     }
@@ -136,7 +142,7 @@ export class Renderer{
     g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.aa,1.5/(this.canvas.width/(1+2*this.padding)*.88));g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
     if(layer.eyeSide){
       const e=this.rig.eyes.find(e=>e.side===layer.eyeSide),f=eyeFrame(Math.max(0,eyeOpen),s.sideEye||0),half=(e.box[3]-e.box[1])/h*.47;
-      g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,half);g.uniform4f(this.uniform.lidShape,f.radius/w,f.curve/h,EYE_STYLE.stroke/h/2,f.line);g.uniform2f(this.uniform.lidMotion,f.upper*half,f.lower*half);g.uniform1f(this.uniform.irisGate,f.iris);g.uniform1f(this.uniform.irisCorner,f.corner);g.uniform2f(this.uniform.eyeGaze,(s.gx||0)*f.gazeSpan,(s.gy||0)*.006);g.uniform1f(this.uniform.irisWidth,f.irisWidth);
+      g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,half);g.uniform4f(this.uniform.lidShape,f.radius/w,f.curve/h,EYE_STYLE.stroke/h/2,f.line);g.uniform2f(this.uniform.lidMotion,f.upper*half,f.lower*half);g.uniform1f(this.uniform.irisGate,f.iris);g.uniform1f(this.uniform.irisCorner,f.corner);g.uniform2f(this.uniform.eyeGaze,(s.gx||0)*f.gazeSpan,(s.gy||0)*.006);g.uniform1f(this.uniform.sideEye,f.sideEye);g.uniform2f(this.uniform.glanceShape,EYE_STYLE.glanceRadius/w,half*EYE_STYLE.glanceDepth*Math.max(0,Math.min(1,eyeOpen/.5)));
     }
     g.bindTexture(g.TEXTURE_2D,layer.texture);g.bufferData(g.ARRAY_BUFFER,layer.data,g.DYNAMIC_DRAW);g.drawArrays(g.TRIANGLES,0,layer.data.length/4);this.stats.drawCalls++;this.stats.vertices+=layer.points.length;
   }

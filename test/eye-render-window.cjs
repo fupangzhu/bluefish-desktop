@@ -7,6 +7,13 @@ app.whenReady().then(async()=>{const evidence={};try{
  const render=async(o,pose={})=>js(`(()=>{const b=bluefish,s={...b.motion.current,yaw:0,pitch:0,roll:0,hair:0,secondary:false,breath:0,gx:0,gy:0,pain:0,left:${o},right:${o},...${JSON.stringify(pose)}};b.renderer.render(s);const g=b.renderer.gl,d=new Uint8Array(b.renderer.canvas.width*b.renderer.canvas.height*4);g.readPixels(0,0,b.renderer.canvas.width,b.renderer.canvas.height,g.RGBA,g.UNSIGNED_BYTE,d);let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>32)n++;return {open:${o},pixels:n};})()`);
  evidence.eyes=[];
  for(const side of ['l','r']){await js(`bluefish.renderer.solo='eye_${side}_open'`);const frames=[];for(const o of [1,.9,.75,.5,.25,.1,.03,0]){frames.push(await render(o));await shot(side+'-'+o);}assert.ok(frames[0].pixels>300);assert.ok(frames.at(-1).pixels>5&&frames.at(-1).pixels<frames[0].pixels*.12);for(let i=1;i<frames.length;i++)assert.ok(frames[i].pixels<=frames[i-1].pixels*1.1+8,JSON.stringify(frames));evidence.eyes.push({side,frames});}
+ evidence.glances=[];
+ for(const side of ['l','r'])for(const gx of [-.95,.95]){
+  await js(`bluefish.renderer.solo='eye_${side}_open'`);await render(.5,{sideEye:1,gx});
+  const probe=await js(`(()=>{const b=bluefish,r=b.renderer,g=r.gl,c=r.canvas,eye=b.rig.eyes.find(e=>e.side==='${side}'),layer=r.byName.get('eye_${side}_open'),s={...b.motion.current,yaw:0,pitch:0,roll:0,hair:0,secondary:false,breath:0,gx:${gx},gy:0,pain:0,left:.5,right:.5,sideEye:1},d=new Uint8Array(c.width*c.height*4);g.readPixels(0,0,c.width,c.height,g.RGBA,g.UNSIGNED_BYTE,d);let white=0;for(let i=0;i<d.length;i+=4)if(d[i+3]>128&&d[i]>200&&d[i+1]>200&&d[i+2]>200)white++;const at=(dx,dy)=>{const x=${gx}*.0165*2048+dx,y=dy,cs=Math.cos(eye.tilt),sn=Math.sin(eye.tilt),p=r.project(eye.center[0]+cs*x-sn*y,eye.center[1]+sn*x+cs*y,s,layer),px=Math.floor((p[0]+1)*c.width/2),py=Math.floor((p[1]+1)*c.height/2);return d[(py*c.width+px)*4+3];};return {white,inside:[at(-24,30),at(24,30),at(0,65)],outside:[at(-46,30),at(46,30)]};})()`);
+  assert.equal(probe.white,0);assert.ok(probe.inside.every(a=>a>150),JSON.stringify(probe));assert.ok(probe.outside.every(a=>a<40),JSON.stringify(probe));await shot('glance-'+side+'-'+gx);evidence.glances.push({side,gx,...probe});
+ }
+ await js('bluefish.renderer.solo=null');for(const mix of [.25,.5,.75,1]){await render(.5,{sideEye:mix,gx:-.95});await shot('glance-transition-'+mix);}
  await js('bluefish.renderer.solo=null');for(const o of [1,.75,.5,.25,.1,0]){await render(o);await shot('full-'+o);}
  for(const [name,pose] of [['left',{yaw:-8,pitch:12,roll:-10}],['right',{yaw:18,pitch:-12,roll:10}]]){await render(0,pose);await shot('closed-'+name);}
  evidence.passed=true;console.log(JSON.stringify(evidence));

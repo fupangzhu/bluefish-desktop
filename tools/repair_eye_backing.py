@@ -39,8 +39,8 @@ for eye in rig['eyes']:
   pad=110;x0=int(cx)-pad;y0=int(cy)-pad;scale=4;tile=Image.new('RGBA',(pad*2*scale,pad*2*scale));d=ImageDraw.Draw(tile);pts=[]
   for x in np.linspace(-radius,radius,160):
    y=7.5*(1-x*x/(radius*radius));pts.append(((cx+cs*x-sn*y-x0)*scale,(cy+sn*x+cs*y-y0)*scale))
-  d.line(pts,fill=(28,119,192,255),width=10*scale,joint='curve')
-  for x,y in [pts[0],pts[-1]]:d.ellipse((x-5*scale,y-5*scale,x+5*scale,y+5*scale),fill=(28,119,192,255))
+  d.line(pts,fill=(28,119,192,255),width=15*scale,joint='curve')
+  for x,y in [pts[0],pts[-1]]:d.ellipse((x-7.5*scale,y-7.5*scale,x+7.5*scale,y+7.5*scale),fill=(28,119,192,255))
   full=Image.new('RGBA',(width,height));full.paste(tile.resize((pad*2,pad*2),Image.Resampling.LANCZOS),(x0,y0));return full
  half=result.copy();arc=7.5*(1-np.clip(lx/70,-1,1)**2);profile=1-np.clip(lx/70,-1,1)**2;bottom=arc+1.12*(eye['box'][3]-eye['box'][1])*.47*profile;mask=smooth((ly-arc+.75)/1.5)*(1-smooth((ly-bottom+.75)/1.5))*(1-smooth((np.abs(lx)-70+.75)/1.5));half[:,:,3]=np.round(half[:,:,3]*mask).astype('uint8');half_image=Image.fromarray(half);half_image.alpha_composite(lid(70));half_image.save(ROOT/f'assets/layers/eye_{side}_half.png');lid(64).save(ROOT/f'assets/layers/eye_{side}_closed.png')
 rig['completion']['face']='Original face silhouette and alpha, with continuous harmonic skin repair beneath the eye cutouts; no row-wise striped fill.'
