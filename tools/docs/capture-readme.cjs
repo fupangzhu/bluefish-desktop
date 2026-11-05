@@ -2,7 +2,7 @@
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path');const {pathToFileURL}=require('node:url');
 const REPO=path.resolve(__dirname,'../..'),OUT=path.join(__dirname,'.work/readme-v2');fs.mkdirSync(OUT,{recursive:true});app.setPath('userData',path.join(OUT,'profile'));
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));let server,base;const manifest={clips:{},stills:{}};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));let server,base;const manifest=fs.existsSync(path.join(OUT,'manifest.json'))?JSON.parse(fs.readFileSync(path.join(OUT,'manifest.json'),'utf8')):{clips:{},stills:{}};
 app.commandLine.appendSwitch('force-device-scale-factor','1.5');app.on('window-all-closed',()=>{});
 const preload=path.join(OUT,'preload.cjs');
 fs.writeFileSync(preload,`const {contextBridge,ipcRenderer}=require('electron');const state={size:240,docked:true,follow:true,idle:false,reduced:false,pose:{yaw:0,pitch:0,roll:0}};contextBridge.exposeInMainWorld('pet',{onState:cb=>ipcRenderer.on('state',(_e,p)=>cb(p)),onPointer:()=>{},onAction:()=>{},setInteractive:()=>{},drag:()=>{},menu:()=>{},zoom:()=>{}});contextBridge.exposeInMainWorld('petControl',{getState:async()=>state,onState:()=>{},set:()=>{},action:()=>{},command:()=>{},fit:()=>{}});`);
@@ -38,6 +38,21 @@ async function petting(reaction){
  }
  manifest.clips[reaction]={width:420,height:420,frames};win.destroy();console.log('Captured petting: '+reaction);
 }
+async function interaction(){
+ const win=await overlay(800,360,320,true),wc=win.webContents,frames=[];
+ await wc.executeJavaScript("bluefish.motion.attention.pickReaction=()=> 'playful';bluefish.motion.wake.random=()=>.6;true");
+ for(let i=0;i<210;i++){
+  const start=Date.now(),t=i*.08;let point;
+  if(i===60)await wc.executeJavaScript('bluefish.setPointer(null);bluefish.forceSulk();bluefish.motion.attention.droop=1;bluefish.motion.attention.lastNear=-30;bluefish.motion.attention.lastMove=-30;bluefish.motion.attention.lastInteraction=bluefish.motion.attention.idleTime-601');
+  if(t<.4||t>=14.7)point=await wc.executeJavaScript('(()=>{bluefish.setPointer(null);bluefish.motion.setGaze(0,0);return {x:680,y:90};})()');
+  else if(t<3.7)point=await wc.executeJavaScript(`(()=>{const b=bluefish,p=b.position(),s=b.state.size,x=p.left+s*(.5+Math.sin(${t}*5)*.12),y=p.top+s*.44;b.setPointer({x,y,gx:0,gy:0});return {x,y};})()`);
+  else if(t<9.2)point=await wc.executeJavaScript('(()=>{bluefish.setPointer(null);bluefish.motion.setGaze(0,0);return {x:680,y:90};})()');
+  else point=await wc.executeJavaScript(`(()=>{const b=bluefish,p=b.position(),s=b.state.size,x=p.left+s*.5,y=p.top+s*.35;b.setPointer({x,y,gx:0,gy:0});return {x,y};})()`);
+  if(i===126){const x=Math.round(point.x),y=Math.round(point.y);wc.sendInputEvent({type:'mouseMove',x,y});wc.sendInputEvent({type:'mouseDown',x,y,button:'left',clickCount:1});wc.sendInputEvent({type:'mouseUp',x,y,button:'left',clickCount:1});}
+  await sleep(Math.max(0,80-(Date.now()-start)));const file='interaction/'+String(i).padStart(3,'0')+'.png';await shot(wc,file);frames.push({file,...point,click:i>=126&&i<133?(i-126)/7:null,duration:80});
+ }
+ manifest.clips.interaction={width:800,height:360,ledge:344,frames};win.destroy();console.log('Captured continuous interaction: '+frames.length+' frames');
+}
 async function stills(){
  const win=await overlay(420,420,400,true),wc=win.webContents;
  await wc.executeJavaScript('bluefish.setPointer(null);bluefish.forceSulk();bluefish.motion.attention.lastNear=-30;bluefish.motion.attention.lastMove=-30;bluefish.motion.attention.droop=1');await sleep(1200);
@@ -53,6 +68,8 @@ async function stills(){
 }
 app.whenReady().then(async()=>{try{
  const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
- await hero();for(const reaction of ['sleepy','playful','subtle'])await petting(reaction);await stills();
+ const only=process.argv.find(a=>a.startsWith('--only='))?.split('=')[1];
+ if(!only){await hero();for(const reaction of ['sleepy','playful','subtle'])await petting(reaction);await stills();}
+ await interaction();
  fs.writeFileSync(path.join(OUT,'manifest.json'),JSON.stringify(manifest,null,2));console.log('Capture complete: '+OUT);
 }catch(e){console.error(e);process.exitCode=1;}finally{server?.close();app.exit(process.exitCode||0);}});
