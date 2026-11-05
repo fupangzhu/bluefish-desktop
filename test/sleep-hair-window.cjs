@@ -13,15 +13,21 @@ app.whenReady().then(async()=>{const evidence={};try{
  for(const size of [150,460])for(const docked of [false,true]){
   await configure(size,docked);await js('bluefish.pause(true)');
   const checks=await js(`(async()=>{const b=bluefish,r=b.renderer,l=r.byName.get('ahoge'),p=b.position(),s=b.state.size,rect=r.canvas.getBoundingClientRect(),{AHOGE_REST}=await import('./src/ahoge.mjs'),out=[];
-   for(const pose of [{yaw:0,pitch:0,roll:0},{yaw:-8,pitch:-12,roll:-10},{yaw:18,pitch:12,roll:10}])for(const index of [16,35])for(const angle of [-180,-135,-90,-45,0,45,90,135]){
+   for(const pose of [{yaw:0,pitch:0,roll:0},{yaw:-8,pitch:-12,roll:-10},{yaw:18,pitch:12,roll:10}])for(const index of [24,72,79])for(const angle of [-180,-135,-90,-45,0,45,90,135]){
     const state={...b.motion.current,...pose,hair:pose.yaw,ahogeWag:0,ahogeDroop:0,secondary:false,breath:0},source=AHOGE_REST[index],q=r.project(source.x,source.y,state,l,true),a=angle*Math.PI/180,client={x:p.left+(q[0]+1)*s/2+Math.cos(a)*s,y:p.top+(1-q[1])*s/2+Math.sin(a)*s};
     r.render({...state,ahogeGrab:{source,client,strength:1,held:true}});
     const [minx,miny,maxx,maxy]=l.bounds,box={left:rect.left+(minx+1)*rect.width/2,right:rect.left+(maxx+1)*rect.width/2,top:rect.top+(1-maxy)*rect.height/2,bottom:rect.top+(1-miny)*rect.height/2};
-    out.push({size:s,docked:b.state.docked,index,angle,pose,box,canvas:l.bounds,stretch:r.ahogePose.stretch,root:r.ahogePose.rootIndex,frame:{w:innerWidth,h:innerHeight}});
+    out.push({image:s===460&&!b.state.docked&&pose.yaw===0&&index===72?r.canvas.toDataURL('image/png').split(',')[1]:null,size:s,docked:b.state.docked,index,angle,pose,box,canvas:l.bounds,stretch:r.ahogePose.stretch,root:r.ahogePose.rootIndex,frame:{w:innerWidth,h:innerHeight}});
    }return out;})()`);
-  evidence.pulls.push(...checks);
+  for(const c of checks){if(c.image){fs.writeFileSync(path.join(OUT,'vector-direction-'+c.angle+'.png'),Buffer.from(c.image,'base64'));delete c.image;}}evidence.pulls.push(...checks);
   // Ledge occlusion below the taskbar is intentional; other edges must not truncate the hair.
   for(const c of checks){assert.ok(c.canvas.every(v=>Math.abs(v)<1),JSON.stringify(c));assert.ok(c.box.left>=0&&c.box.right<=c.frame.w&&c.box.top>=0,JSON.stringify(c));if(!docked)assert.ok(c.box.bottom<=c.frame.h,JSON.stringify(c));assert.ok(c.stretch<=.180001);assert.ok(c.root<=2);}
+ }
+ // Record the actual WebGL strand, including damping on release, for contour review.
+ await configure(460,false);await js('bluefish.pause(true)');fs.mkdirSync(path.join(OUT,'vector-frames'),{recursive:true});
+ for(let i=0;i<90;i++){
+  const encoded=await js(`(async()=>{const b=bluefish,r=b.renderer,l=r.byName.get('ahoge'),p=b.position(),s=b.state.size,{AHOGE_REST}=await import('./src/ahoge.mjs'),source=AHOGE_REST[72],state={...b.motion.current,yaw:0,pitch:0,roll:0,hair:0,ahogeDroop:0,ahogeWag:0,secondary:false,breath:0,left:1,right:1},q=r.project(source.x,source.y,state,l,true),time=${i}/30,pull=Math.max(0,Math.min(1,(time-.4)/.8)),release=Math.max(0,time-1.7),strength=release?Math.exp(-release*11)*(Math.cos(release*17)+.32*Math.sin(release*17)):1,client={x:p.left+(q[0]+1)*s/2+s*.08*pull,y:p.top+(1-q[1])*s/2-s*.35*pull};r.render({...state,pain:time>.7&&time<2?1:0,...(time>.4&&time<2.35?{ahogeGrab:{source,client,strength,held:time<1.7}}:{})});return r.canvas.toDataURL('image/png').split(',')[1];})()`);
+  fs.writeFileSync(path.join(OUT,'vector-frames',String(i).padStart(3,'0')+'.png'),Buffer.from(encoded,'base64'));
  }
  await configure(460,true);
  await js('bluefish.motion.attention.lastInteraction=-601;bluefish.motion.attention.droop=1;bluefish.motion.attention.lastNear=-30');

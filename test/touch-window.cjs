@@ -98,12 +98,12 @@ app.whenReady().then(async()=>{
     for(const [name,dx,dy] of [['grip',0,0],['drag',8,-2],['straighten',23,-7],['stretch',40,-11],['limit',85,-15]]){
       const p={x:pinch.x+dx,y:pinch.y+dy};input('mouseMove',p);await sleep(150);await shot('pinch-'+name);
       const detail=await js(`(()=>{const b=window.bluefish,r=b.renderer,g=b.motion.touch.grab,l=r.byName.get('ahoge'),s=b.motion.current,p=b.position();
-        const q=r.project(g.source.x,g.source.y,s,l),root=r.project(l.pivot[0],l.pivot[1],s,l),fixed=r.project(l.pivot[0],l.pivot[1],s,l,true);
-        return {phase:r.ahogePose.phase,stretch:r.ahogePose.stretch,pin:{x:p.left+(q[0]+1)*460/2,y:p.top+(1-q[1])*460/2},rootError:Math.hypot(root[0]-fixed[0],root[1]-fixed[1])};})()`);
+        const q=r.project(g.source.x,g.source.y,s,l,false,g.binding),root=r.project(l.pivot[0],l.pivot[1],s,l),fixed=r.project(l.pivot[0],l.pivot[1],s,l,true);
+        return {phase:r.ahogePose.phase,saturated:r.ahogePose.saturated,stretch:r.ahogePose.stretch,pin:{x:p.left+(q[0]+1)*460/2,y:p.top+(1-q[1])*460/2},rootError:Math.hypot(root[0]-fixed[0],root[1]-fixed[1])};})()`);
       assert.ok(detail.rootError<.0001,'root remains fixed');assert.ok(detail.stretch<=.18,'limited axial stretch');
-      if(name!=='limit')assert.ok(Math.hypot(detail.pin.x-p.x,detail.pin.y-p.y)<1.5,'pin stays under cursor through elastic range');evidence.pinch.push({name,...detail});
+      if(!detail.saturated)assert.ok(Math.hypot(detail.pin.x-p.x,detail.pin.y-p.y)<1.5,'pin stays under cursor through elastic range');evidence.pinch.push({name,...detail});
     }
-    await release(pinch);await sleep(750);
+    await release(pinch);await sleep(750);await shot('pinch-released');
     assert.equal(await js('window.bluefish.motion.touch.grab'),null);
     // Fast-forward the idle clock without waiting two real minutes.
     await js('window.bluefish.motion.idle=true;window.bluefish.motion.touch.nextEarAt=window.bluefish.motion.touch.idleTime+.05;');
@@ -132,7 +132,7 @@ app.whenReady().then(async()=>{
     const hole=await js(`(()=>{const b=window.bluefish,r=b.renderer,l=r.byName.get('ahoge'),p=b.position(),q=r.project(1370,295,b.motion.current,l);return b.partAt(p.left+(q[0]+1)*460/2,p.top+(1-q[1])*460/2);})()`);
     assert.notEqual(hole,'ahoge');evidence.loopHole=hole;
     // Preview console uses the same reactions as the desktop overlay.
-    await win.loadURL(base+'/');for(let i=0;i<200;i++){if(await js('!!window.bluefish?.renderer'))break;await sleep(100);}
+    await win.loadURL(base+'/');for(let i=0;i<200;i++){if(await js('!!(window.bluefish?.renderer&&window.bluefish.motion.current&&window.bluefish.renderer.drawn?.length)'))break;await sleep(100);}
     assert.ok(await js('!!window.bluefish?.renderer'),'console renderer loaded');
     await js(`(()=>{const b=window.bluefish,r=b.renderer,l=r.byName.get('ahoge'),s=b.motion.current,rect=r.canvas.getBoundingClientRect(),source={x:1535,y:280},q=r.project(source.x,source.y,s,l);
       const p={x:rect.left+(q[0]+1)*rect.width/2,y:rect.top+(1-q[1])*rect.height/2};

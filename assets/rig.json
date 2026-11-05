@@ -42,8 +42,8 @@
         0
       ],
       "pivot": [
-        1024.0,
-        1024.0
+        1024,
+        1024
       ],
       "depth": 0,
       "empty": true,
@@ -289,8 +289,8 @@
         0
       ],
       "pivot": [
-        1024.0,
-        1024.0
+        1024,
+        1024
       ],
       "depth": 0,
       "empty": true,
@@ -321,10 +321,10 @@
       "name": "ahoge",
       "file": "assets/layers/ahoge.png",
       "box": [
-        1095,
-        106,
-        1596,
-        513
+        1108,
+        104,
+        1547,
+        506
       ],
       "pivot": [
         1143.222,
@@ -334,7 +334,8 @@
       "empty": false,
       "eyeSide": null,
       "visibleAtRest": true,
-      "overlapPx": 0
+      "overlapPx": 0,
+      "vectorSource": "assets/vector/ahoge.svg"
     },
     {
       "name": "headdress",
@@ -430,6 +431,7 @@
     "body": "Empty: complete head portrait has no body.",
     "mouth": "Empty: approved expression has no drawn mouth.",
     "overlap": "12px at occluded attachment edges where geometrically possible; never outward over the silhouette.",
-    "nativeResolution": "1254 source resampled with Lanczos onto 2048 fixed grid; not native 2048 generation."
+    "nativeResolution": "1254 source resampled with Lanczos onto 2048 fixed grid; not native 2048 generation.",
+    "ahoge": "Code-drawn cubic vector curl with a continuous width profile; fixed original root; matching SVG and PNG export."
   }
 }

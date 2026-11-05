@@ -1,12 +1,11 @@
 import {deformEar} from './ears.mjs';
-import {AHOGE_REST,ahogeRibbon,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
+import {AHOGE_REST,AHOGE_COLORS,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
 const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;
 void main(){vec4 color=texture2D(image,tex);if(eyeOpen>=0.){vec2 p=(crop.xy+tex*crop.zw-eye.xy);float yy=-sin(eye.z)*p.x+cos(eye.z)*p.y;float top=eyeOpen>=.5?eye.w*(1.-2.*eyeOpen):0.;float bottom=eyeOpen>=.5?eye.w:eye.w*eyeOpen*2.;float e=max(.0007,aa);float mask=smoothstep(top-e,top+e,yy)*(1.-smoothstep(bottom-e,bottom+e,yy));color*=mask;}gl_FragColor=color*opacity;}`;
 const rad=d=>d*Math.PI/180;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const DROOP_MAX=90;       // degrees of bend at the ahoge tip when fully drooped
 const FALLBACK_TEX_SCALE=.5; // WebGL1 has no mipmaps for NPOT textures: pre-shrink layers instead
 function cleanHairBacking(canvas,x,y){
   // The separated backing includes isolated ear-tip/trim remnants. Keep its
@@ -43,13 +42,17 @@ export class Renderer{
   async init(){
     for(const meta of this.rig.layers){
       if(meta.empty)continue;
+      if(meta.name==='ahoge'){
+        const image=document.createElement('canvas');image.width=64;image.height=512;const ctx=image.getContext('2d'),rgba=ctx.createImageData(image.width,image.height);
+        for(let y=0;y<image.height;y++){const p=AHOGE_REST[Math.round(y/(image.height-1)*(AHOGE_REST.length-1))],t=clamp((p.y-140)/365,0,1);for(let x=0;x<image.width;x++){const i=(y*image.width+x)*4;for(let k=0;k<3;k++)rgba.data[i+k]=AHOGE_COLORS.top[k]+(AHOGE_COLORS.root[k]-AHOGE_COLORS.top[k])*t;rgba.data[i+3]=x===0||x===image.width-1?0:255;}}
+        ctx.putImageData(rgba,0,0);this.addLayer({...meta,box:ahogeBounds(),procedural:true},image);continue;
+      }
       const img=new Image();img.src=meta.file;await img.decode();
       const [x0,y0,x1,y1]=meta.box,width=x1-x0,height=y1-y0;
       const k=this.webgl2?1:FALLBACK_TEX_SCALE,tw=Math.max(1,Math.round(width*k)),th=Math.max(1,Math.round(height*k));
       const cropped=document.createElement('canvas');cropped.width=tw;cropped.height=th;const c2=cropped.getContext('2d');c2.imageSmoothingEnabled=true;c2.imageSmoothingQuality='high';c2.drawImage(img,x0,y0,width,height,0,0,tw,th);
       if(meta.name==='hair_back')cleanHairBacking(cropped,(meta.pivot[0]-x0)*k,(meta.pivot[1]-y0)*k);
-      if(meta.name==='ahoge')cleanHairBacking(cropped,(1198-x0)*k,(255-y0)*k);
-      if(meta.name==='ahoge'){const pad=Math.max(1,Math.round(2*k)),image=document.createElement('canvas');image.width=tw+2*pad;image.height=th+2*pad;image.getContext('2d').drawImage(cropped,pad,pad);this.addLayer({...meta,box:[x0-2,y0-2,x1+2,y1+2]},image);}else this.addLayer(meta,cropped);
+      this.addLayer(meta,cropped);
     }
     // Draw the reference's inward-facing > < eyelids in source coordinates, so
     // they use the same head projection, occlusion and scaling as the original eyes.
@@ -69,10 +72,11 @@ export class Renderer{
     const rgba=image.getContext('2d').getImageData(0,0,image.width,image.height).data;
     const alpha=new Uint8Array(image.width*image.height);for(let i=0;i<alpha.length;i++)alpha[i]=rgba[i*4+3];
     const layer={...meta,texture:this.texture(image),points:[],data:null,alpha,texWidth:image.width,texHeight:image.height};
-    const n=meta.name==='ahoge'?64:meta.name.startsWith('eye_')?6:22;
-    const vertex=(i,j)=>{const x=x0+width*i/n,y=y0+height*j/n;layer.points.push([x,y,i/n,j/n,meta.name==='ahoge'?bindAhoge({x,y}):null]);};
-    for(let j=0;j<n;j++)for(let i=0;i<n;i++){vertex(i,j);vertex(i+1,j);vertex(i,j+1);vertex(i+1,j);vertex(i+1,j+1);vertex(i,j+1);}
-    if(meta.name==='ahoge')layer.points=ahogeRibbon(alpha,image.width,image.height,meta.box);
+    if(meta.procedural)layer.points=ahogeGeometry();
+    else{
+      const n=meta.name.startsWith('eye_')?6:22,vertex=(i,j)=>layer.points.push([x0+width*i/n,y0+height*j/n,i/n,j/n,null]);
+      for(let j=0;j<n;j++)for(let i=0;i<n;i++){vertex(i,j);vertex(i+1,j);vertex(i,j+1);vertex(i+1,j);vertex(i+1,j+1);vertex(i,j+1);}
+    }
     layer.data=new Float32Array(layer.points.length*4);layer.points.forEach((p,i)=>{layer.data[i*4+2]=p[2];layer.data[i*4+3]=p[3];});
     this.layers.push(layer);this.byName.set(layer.name,layer);
   }
@@ -98,7 +102,7 @@ export class Renderer{
       [px,py]=deformEar(px,py,layer,s);
     }
     if(localAngle||droop){const dx=px-layer.pivot[0],dy=py-layer.pivot[1];let deg=localAngle;
-      if(droop)deg+=droop*DROOP_MAX*clamp(Math.hypot(dx,dy)/(layer.box[3]-layer.box[1]),0,1)**1.3; // bend: grows toward the tip, positive = tip flops forward/down
+      if(droop)deg+=droop*75; // A single frame rotation preserves the vector strand's width and curl.
       const a=rad(deg);px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
     if(name.startsWith('eye_')&&name.endsWith('_open')){px+=(s.gx||0)*w*.009;py+=(s.gy||0)*h*.006;}
     let x=px/w-.5,y=py/h-.5;
@@ -137,7 +141,7 @@ export class Renderer{
         if(Math.abs(det)<1e-12)break;
         const ex=aim.x-p[0],ey=aim.y-p[1];x+=clamp((ex*by-ey*bx)/det,-4096,4096);y+=clamp((ey*ax-ex*ay)/det,-4096,4096);
       }
-      this.ahogePose=solveAhoge(grab.source,{x,y},{strength:grab.strength,held:grab.held,base:grab.base||AHOGE_REST});
+      this.ahogePose=solveAhoge(grab.source,{x,y},{strength:grab.strength,held:grab.held,base:grab.base||AHOGE_REST,binding:grab.binding});
     }
     g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);this.stats.drawCalls=0;this.stats.vertices=0;this.drawn=[];
     if(this.solo){const layer=this.byName.get(this.solo);if(layer)this.draw(layer,s);}
@@ -172,7 +176,7 @@ export class Renderer{
         if(layer.alpha[ty*layer.texWidth+tx]>24){
           if(!['ahoge','ear_l','ear_r'].includes(layer.name))return null;
           const [x0,y0,x1,y1]=layer.box;
-          return {part:layer.name,source:{x:x0+u*(x1-x0),y:y0+v*(y1-y0)},curve:layer.name==='ahoge'&&this.ahogePose?AHOGE_REST.map(p=>deformAhoge(bindAhoge(p),this.ahogePose)):null};
+          return {part:layer.name,binding:layer.procedural?Object.fromEntries(['t','along','across','u'].map(k=>[k,a*layer.points[i/4][4][k]+b*layer.points[i/4+1][4][k]+c*layer.points[i/4+2][4][k]])):null,source:layer.procedural?{x:a*layer.points[i/4][0]+b*layer.points[i/4+1][0]+c*layer.points[i/4+2][0],y:a*layer.points[i/4][1]+b*layer.points[i/4+1][1]+c*layer.points[i/4+2][1]}:{x:x0+u*(x1-x0),y:y0+v*(y1-y0)},curve:layer.name==='ahoge'&&this.ahogePose?AHOGE_REST.map((p,i)=>deformAhoge({t:i,u:.5,along:0,across:0},this.ahogePose)):null};
         }
       }
     }

@@ -8,7 +8,7 @@ export class Touch {
   scheduleEar(){this.nextEarAt=this.idleTime+60+this.random()*60;}
   startPull(point,grip=null){
     this.anchor={x:point.x,y:point.y};this.target={x:0,y:0,pain:0};
-    this.grab=grip?.source?{source:{...grip.source},base:grip.curve||null,client:{...point},held:true,releasedAt:0,strength:1}:null;
+    this.grab=grip?.source?{source:{...grip.source},binding:grip.binding?{...grip.binding}:null,base:grip.curve||null,client:{...point},held:true,releasedAt:0,strength:1}:null;
     this.scheduleEar();
   }
   movePull(point,size){
