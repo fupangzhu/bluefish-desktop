@@ -1,4 +1,2 @@
 @echo off
-cd /d "%~dp0"
-node server.mjs --open
-pause
+call "%~dp0open-editor.cmd"
