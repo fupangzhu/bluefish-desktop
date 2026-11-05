@@ -91,7 +91,7 @@ test('the moving quadratic outline stays closed at the tip and tangent-continuou
  }
 });
 
-test('side changes use root rotation through upright, never a collapsing mirror scale',async()=>{const {ahogeRestAngle}=await import('../src/ahoge.mjs');assert.equal(ahogeRestAngle(1,-1),-115);assert.equal(ahogeRestAngle(1,1),75);assert.equal(ahogeRestAngle(0,-1),0);for(let i=0;i<100;i++){const a=ahogeRestAngle(1,-1+i/50),b=ahogeRestAngle(1,-1+(i+1)/50);assert.ok(Math.abs(b-a)<2);}});
+test('side changes use the lower root arc, never a collapsing mirror scale',async()=>{const {ahogeRestAngle}=await import('../src/ahoge.mjs');assert.equal(ahogeRestAngle(1,-1),245);assert.equal(ahogeRestAngle(1,1),75);assert.equal(ahogeRestAngle(0,-1),0);for(let i=0;i<100;i++){const a=ahogeRestAngle(1,-1+i/50),b=ahogeRestAngle(1,-1+(i+1)/50);assert.ok(Math.abs(b-a)<2);}});
 
 test('SVG quadratic segments reproduce the same WebGL boundary between their endpoints',()=>{
  const svg=ahogeSVG(),path=svg.match(/ d="([^"]+)"/)[1],tokens=path.match(/[MQZ]|-?\d+(?:\.\d+)?/g);let i=1,point={x:+tokens[i++],y:+tokens[i++]},segment=0;

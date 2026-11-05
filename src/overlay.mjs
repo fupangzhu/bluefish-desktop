@@ -103,18 +103,18 @@ function applyState(next){
 }
 
 // ---- input ------------------------------------------------------------------------------------------
-function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){touchInput.move(p);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
+function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
 function onDown(e){
   if(e.button!==0||activePointer!==null||!hitTest(e.clientX,e.clientY))return;
   activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
   if(motion.attention.current.sleeping){wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
   const part=partAt(e.clientX,e.clientY);
-  const grip=part==='ahoge'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
+  const grip=part==='ahoge'||part==='hair_front'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
   touchInput.begin(part,{x:e.clientX,y:e.clientY},L.s,grip);
   if(!part)motion.blink();pokeFlag=true;
   lastHit=true;pet?.setInteractive(true);
-  document.documentElement.style.cursor=part==='ahoge'?'grabbing':'';
+  document.documentElement.style.cursor=part==='ahoge'||part==='hair_front'?'grabbing':'';
 }
 function endDrag(e){
   if(e?.pointerId!==undefined&&activePointer!==null&&e.pointerId!==activePointer)return;
@@ -131,7 +131,7 @@ for(const el of [canvas,handsCanvas]){
 }
 addEventListener('pointermove',e=>{if(e.pointerId===activePointer)touchInput.move({x:e.clientX,y:e.clientY});});
 addEventListener('pointerup',endDrag);
-addEventListener('blur',endDrag);
+addEventListener('blur',()=>{endDrag();touchInput.hover(null,null,L.s);});
 addEventListener('wheel',e=>{pokeFlag=true;if(e.ctrlKey){e.preventDefault();pet?.zoom(-Math.sign(e.deltaY));}},{passive:false});
 addEventListener('resize',()=>layout());
 

@@ -1,3 +1,4 @@
+import {deformFringe} from './fringe.mjs';
 import {eyeFrame,EYE_STYLE} from './eyes.mjs';
 import {deformEar} from './ears.mjs';
 import {AHOGE_REST,AHOGE_COLORS,ahogeRestAngle,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
@@ -113,6 +114,7 @@ export class Renderer{
   }  project(px,py,s,layer,raw=false,binding=null){
     const w=this.rig.size[0],h=this.rig.size[1],name=layer.name;
     if(name==='ahoge'&&this.ahogePose&&!raw){const p=deformAhoge(binding||bindAhoge({x:px,y:py}),this.ahogePose);px=p.x;py=p.y;}
+    if(name==='hair_front')[px,py]=deformFringe(px,py,s);
     const lag=(s.hair??s.yaw)-s.yaw,t=s.time||0;let localAngle=0;
     let droop=0;
     if(name==='ahoge'){localAngle=lag*.32+(s.secondary?Math.sin(t*2.3)*1.2:0)+(s.ahogeWag||0);droop=clamp(s.ahogeDroop||0,0,1);}
@@ -167,13 +169,17 @@ export class Renderer{
     }
     g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);this.stats.drawCalls=0;this.stats.vertices=0;this.drawn=[];
     if(this.solo){const layer=this.byName.get(this.solo);if(layer)this.draw(layer,s,1,layer.name.endsWith('_open')?(layer.eyeSide==='l'?s.left:s.right):-1);}
-    else for(const name of this.rig.drawOrder){
+    else {
+    // The ahoge is always the top character layer, including the lower sweep.
+    const order=[...this.rig.drawOrder.filter(n=>n!=='ahoge'),'ahoge'];
+    for(const name of order){
       const layer=this.byName.get(name);if(!layer)continue;
       if(name.startsWith('eye_')&&name.endsWith('_open')){
         const openness=layer.eyeSide==='l'?s.left:s.right,pain=(s.pain||0)>.08?1:0;
         this.draw(layer,s,1-pain,openness);
         if(pain)this.draw(this.byName.get(name.replace('_open','_pain')),s,pain);
       }else this.draw(layer,s);
+    }
     }
     this.stats.frameMs=performance.now()-begin;
   }
@@ -195,7 +201,7 @@ export class Renderer{
         const u=a*d[i+2]+b*d[i+6]+c*d[i+10],v=a*d[i+3]+b*d[i+7]+c*d[i+11];
         const tx=clamp(Math.floor(u*layer.texWidth),0,layer.texWidth-1),ty=clamp(Math.floor(v*layer.texHeight),0,layer.texHeight-1);
         if(layer.alpha[ty*layer.texWidth+tx]>24){
-          if(!['ahoge','ear_l','ear_r'].includes(layer.name))return null;
+          if(!['ahoge','ear_l','ear_r','hair_front'].includes(layer.name))return null;
           const [x0,y0,x1,y1]=layer.box;
           return {part:layer.name,binding:layer.procedural?Object.fromEntries(['t','along','across','u'].map(k=>[k,a*layer.points[i/4][4][k]+b*layer.points[i/4+1][4][k]+c*layer.points[i/4+2][4][k]])):null,source:layer.procedural?{x:a*layer.points[i/4][0]+b*layer.points[i/4+1][0]+c*layer.points[i/4+2][0],y:a*layer.points[i/4][1]+b*layer.points[i/4+1][1]+c*layer.points[i/4+2][1]}:{x:x0+u*(x1-x0),y:y0+v*(y1-y0)},curve:layer.name==='ahoge'&&this.ahogePose?AHOGE_REST.map((p,i)=>deformAhoge({t:i,u:.5,along:0,across:0},this.ahogePose)):null};
         }

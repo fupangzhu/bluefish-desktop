@@ -1,10 +1,11 @@
+import {Fringe} from './fringe.mjs';
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const smooth=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
 
 // Transient reactions are independent of idle gestures and never move the native window.
 export class Touch {
   constructor(random=Math.random){this.random=random;this.reset();}
-  reset(){this.time=0;this.anchor=null;this.target={x:0,y:0,pain:0};this.value={x:0,y:0,pain:0};this.ears={l:null,r:null};this.grab=null;this.idleTime=0;this.scheduleEar();}
+  reset(){this.fringe=new Fringe();this.time=0;this.anchor=null;this.target={x:0,y:0,pain:0};this.value={x:0,y:0,pain:0};this.ears={l:null,r:null};this.grab=null;this.idleTime=0;this.scheduleEar();}
   scheduleEar(){this.nextEarAt=this.idleTime+60+this.random()*60;}
   startPull(point,grip=null){
     this.anchor={x:point.x,y:point.y};this.target={x:0,y:0,pain:0};
@@ -27,7 +28,7 @@ export class Touch {
   }
   step(dt,reduced=false,idle=true){
     dt=clamp(Number.isFinite(dt)?dt:0,0,.1);this.time+=dt;
-    if(idle&&!reduced&&!this.anchor){
+    if(idle&&!reduced&&!this.anchor&&!this.fringe.held){
       this.idleTime+=dt;
       if(this.idleTime>=this.nextEarAt&&!this.ears.l&&!this.ears.r){
         const side=this.random()<.5?'l':'r';this.twitch(side,true);this.scheduleEar();
@@ -51,7 +52,7 @@ export class Touch {
       const phase=elapsed%ear.period/ear.period;
       return ear.amplitude*Math.sin(Math.PI*phase)**2;
     };
-    const state={pain:this.value.pain,ahogePullX:this.value.x,ahogePullY:this.value.y,earFoldL:fold('l'),earFoldR:fold('r')};
+    const state={...this.fringe.step(dt,reduced),pain:this.value.pain,ahogePullX:this.value.x,ahogePullY:this.value.y,earFoldL:fold('l'),earFoldR:fold('r')};
     for(const side of ['l','r']){const ear=this.ears[side];if(ear&&!reduced)state[side==='l'?'earTwitchL':'earTwitchR']={elapsed:this.time-ear.at,count:ear.count,period:ear.period,amplitude:ear.amplitude};}
     if(this.grab)state.ahogeGrab={...this.grab};return state;
   }
@@ -64,20 +65,24 @@ export class TouchInput {
     if(this.active)return false;
     this.active={part:part||'body',point:{...point},size};
     if(part==='ahoge')this.touch.startPull(point,grip);
+    else if(part==='hair_front')this.touch.fringe.start(point,size,grip?.source);
     else if(part!=='ear_l'&&part!=='ear_r')this.onDrag(true);
     return true;
   }
   move(point){
     const active=this.active;if(!active)return;
     if(active.part==='ahoge')this.touch.movePull(point,active.size);
+    else if(active.part==='hair_front')this.touch.fringe.move(point);
     else if(active.part.startsWith('ear_')&&Math.hypot(point.x-active.point.x,point.y-active.point.y)>Math.max(5,active.size*.025)){
       active.part='body';this.onDrag(true);
     }
   }
+  hover(part,point,size,grip=null){this.touch.fringe.brush(!this.active&&part==='hair_front'?point:null,size,grip?.source);}
   end(cancel=false){
     const active=this.active;if(!active)return;
     this.active=null;
     if(active.part==='ahoge')this.touch.endPull();
+    else if(active.part==='hair_front')this.touch.fringe.end();
     else if(active.part.startsWith('ear_')){if(!cancel)this.touch.twitch(active.part.slice(-1));}
     else this.onDrag(false);
   }

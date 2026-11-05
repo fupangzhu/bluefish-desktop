@@ -21,6 +21,7 @@
     "src/eyelids.mjs",
     "src/eyes.mjs",
     "src/hands.mjs",
+    "src/fringe.mjs",
     "src/icons.mjs",
     "src/menu.mjs",
     "src/motion.mjs",

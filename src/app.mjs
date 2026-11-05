@@ -106,10 +106,11 @@ new ResizeObserver(updatePreviewSize).observe(stage);
 
 /* Preview gaze: only while the cursor is over the stage. */
 let attentionPointer=null,wakeFlag=false;
-function gaze(x,y){attentionPointer={x,y};const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
+function brushFringe(x,y){if(!renderer)return;const r=canvas.getBoundingClientRect(),hit=renderer.pickHit(x-r.left,y-r.top);touchInput.hover(hit?.part,{x,y},r.width,hit);}
+function gaze(x,y){brushFringe(x,y);attentionPointer={x,y};const r=canvas.getBoundingClientRect();motion.setGaze((x-r.left-r.width*.5)/(r.width*.7),(y-r.top-r.height*.6)/(r.height*.7));}
 stage.addEventListener('pointermove',e=>gaze(e.clientX,e.clientY));
-stage.addEventListener('pointerleave',()=>{attentionPointer=null;motion.setGaze(0,0);});
-addEventListener('blur',()=>{attentionPointer=null;motion.setGaze(0,0);});
+stage.addEventListener('pointerleave',()=>{attentionPointer=null;motion.setGaze(0,0);motion.touch.fringe.brush(null,canvas.clientWidth);});
+addEventListener('blur',()=>{attentionPointer=null;motion.setGaze(0,0);motion.touch.fringe.brush(null,canvas.clientWidth);});
 const touchInput=new TouchInput(motion.touch);
 let touchPointer=null;
 const canvasPoint=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
@@ -121,7 +122,7 @@ canvas.addEventListener('pointerdown',e=>{
   if(motion.attention.current.sleeping){wakeFlag=true;return;}
   const hit=renderer.pickHit(p.x,p.y),part=hit?.part;
   touchInput.begin(part,{x:e.clientX,y:e.clientY},canvas.clientWidth,hit);
-  if(!part)motion.blink();canvas.style.cursor=part==='ahoge'?'grabbing':'';
+  if(!part)motion.blink();canvas.style.cursor=part==='ahoge'||part==='hair_front'?'grabbing':'';
 });
 canvas.addEventListener('pointermove',e=>{if(e.pointerId===touchPointer)touchInput.move({x:e.clientX,y:e.clientY});});
 function endTouch(e){
