@@ -72,10 +72,12 @@ if ($LASTEXITCODE -ne 0) { throw "portable package failed" }
 Write-Host "-- runtime layers + preview + checksums"
 Compress-Archive -Path "assets\layers\*", "assets\rig.json", "assets\master.png" -DestinationPath "$dist\bluefish-png-layers.zip" -Force
 Copy-Item "docs\hero.gif" "$dist\bluefish-preview.gif" -Force
+Copy-Item "assets\vector\ahoge.svg" "$dist\bluefish-ahoge.svg" -Force
 $assets = @(
   "$dist\bluefish-desktop-$tag-windows-x64.zip",
   "$dist\bluefish-png-layers.zip",
-  "$dist\bluefish-preview.gif"
+  "$dist\bluefish-preview.gif",
+  "$dist\bluefish-ahoge.svg"
 )
 
 if (-not $NoInstaller) {
