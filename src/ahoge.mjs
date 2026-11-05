@@ -5,6 +5,8 @@ const distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 const unit=(x,y)=>{const n=Math.hypot(x,y)||1;return {x:x/n,y:y/n};};
 const lerp=(a,b,t)=>({x:mix(a.x,b.x,t),y:mix(a.y,b.y,t)});
 const ease=t=>{t=clamp(t,0,1);return t*t*t*(t*(t*6-15)+10);};
+// Full left/right rest poses rotate a single intact outline around the fixed root.
+export const ahogeRestAngle=(droop,side=1)=>clamp(droop,0,1)*(95*clamp(side,-1,1)-20)||0;
 export const AHOGE_ROOT={x:1143.222,y:503.018};
 export const AHOGE_COLORS={top:[65,105,231],root:[39,76,193]};
 // A clamped cubic B-spline (six controls, two interior knots). Both boundaries

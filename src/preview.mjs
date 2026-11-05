@@ -1,5 +1,5 @@
 // Source-editor playback: deterministic setup, shared production Motion, no alternate animation renderer.
-export const PREVIEWS={snub_l:4.5,snub_r:4.5,normal:6,rub_l:6,rub_r:6,peek:4,sleep:65,ear_l:1.2,ear_r:1.2,hair:8,breath:22,blink:1};
+export const PREVIEWS={snub_l:4.5,snub_r:4.5,normal:6,rub_l:6,rub_r:6,peek:4,sleep:65,ear_l:1.2,ear_r:1.2,hair:7.2,hair_ltr:7.2,hair_rtl:7.2,breath:22,blink:1};
 export class Preview{
  constructor(motion){this.motion=motion;this.active=false;this.playing=false;this.time=0;this.duration=0;this.rate=1;this.name='';}
  select(name){
@@ -18,7 +18,7 @@ export class Preview{
    if(['normal','rub_l','rub_r','peek'].includes(this.name)){
     const draw=this.name==='normal'?.1:this.name==='rub_l'?.66:this.name==='rub_r'?.8:.95;m.wake.random=()=>draw;m.attention.update(0,{now:0,wake:true});m.step(0);
    }else if(this.name.startsWith('ear_'))m.doze.twitch(this.name.endsWith('l')?'l':'r');
-   else if(this.name==='hair'){m.doze.side=m.doze.sideTarget=-1;m.doze.nextSide=.3;}
+   else if(this.name==='hair'||this.name.startsWith('hair_')){const from=this.name==='hair_rtl'?1:-1;m.doze.side=m.doze.sideTarget=m.doze.lean=from;m.springs.side.value=from;m.doze.nextSide=.3;m.step(0);}
    else if(this.name==='sleep'){m.doze.nextEar=20;m.doze.nextSide=35;}
   }else{m.attention.update(0,{now:0});m.step(0);m.blink();}
  }

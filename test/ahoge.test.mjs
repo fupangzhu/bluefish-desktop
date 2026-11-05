@@ -92,3 +92,5 @@ test('the moving outline stays closed at the tip and C2 continuous at its knots'
   }
  }
 });
+
+test('side changes use root rotation through upright, never a collapsing mirror scale',async()=>{const {ahogeRestAngle}=await import('../src/ahoge.mjs');assert.equal(ahogeRestAngle(1,-1),-115);assert.equal(ahogeRestAngle(1,1),75);assert.equal(ahogeRestAngle(0,-1),0);for(let i=0;i<100;i++){const a=ahogeRestAngle(1,-1+i/50),b=ahogeRestAngle(1,-1+(i+1)/50);assert.ok(Math.abs(b-a)<2);}});

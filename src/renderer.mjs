@@ -1,6 +1,6 @@
 import {eyeFrame,EYE_STYLE} from './eyes.mjs';
 import {deformEar} from './ears.mjs';
-import {AHOGE_REST,AHOGE_COLORS,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
+import {AHOGE_REST,AHOGE_COLORS,ahogeRestAngle,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
 const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;uniform vec4 lidShape;uniform vec2 lidMotion;uniform float irisGate;uniform float irisCorner;uniform vec2 eyeGaze;uniform float sideEye;uniform vec2 glanceShape;
@@ -122,7 +122,7 @@ export class Renderer{
       [px,py]=deformEar(px,py,layer,s);
     }
     if(localAngle||droop){const dx=px-layer.pivot[0],dy=py-layer.pivot[1];let deg=localAngle;
-      if(droop)deg+=droop*75; // A single frame rotation preserves the vector strand's width and curl.
+      if(droop)deg+=ahogeRestAngle(droop,s.ahogeSide??1); // A single frame rotation preserves the vector strand's width and curl.
       const a=rad(deg);px=layer.pivot[0]+Math.cos(a)*dx-Math.sin(a)*dy;py=layer.pivot[1]+Math.sin(a)*dx+Math.cos(a)*dy;}
     let x=px/w-.5,y=py/h-.5;
     if(name==='hair_back'){const tip=Math.max(0,(py/h-.48)/.5);x+=lag*.0009*tip+(s.secondary?Math.sin(t*1.6+x*4)*.0025*tip:0);}

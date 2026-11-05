@@ -31,3 +31,11 @@ test('the tiny breath remains perceptible at minimum size and under one pixel at
 test('a slow frame still renders a visible initial ear impulse instead of skipping its peak',async()=>{
  const {flick}=await import('../src/ears.mjs'),d=new Doze(()=>0);d.step(.1,{sleeping:true,now:0});const s=d.step(.1,{sleeping:true,now:21});assert.ok(s.ear);assert.ok(flick(s.ear.elapsed,s.ear)>.3);
 });
+
+test('sleep side changes cross the head smoothly in both directions without changing the low-frequency deadlines',()=>{
+ for(const fps of [30,60,120]){
+  const d=new Doze(()=>0),dt=1/fps;d.step(dt,{sleeping:true});d.nextSide=d.time+.2;let last=1,minimum=1,maximum=-1;
+  for(let i=0;i<fps*7;i++){const s=d.step(dt,{sleeping:true});assert.ok(Math.abs(s.side-last)<.05);last=s.side;minimum=Math.min(minimum,s.side);}assert.ok(minimum<-.97);assert.ok(d.nextSide-d.time>70);
+  d.nextSide=d.time+.2;for(let i=0;i<fps*7;i++){const s=d.step(dt,{sleeping:true});assert.ok(Math.abs(s.side-last)<.05);last=s.side;maximum=Math.max(maximum,s.side);}assert.ok(maximum>.97);
+ }
+});

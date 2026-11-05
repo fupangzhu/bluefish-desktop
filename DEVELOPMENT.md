@@ -25,7 +25,7 @@ tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 132 项）+ Electron 交互回归
+test/           node --test 单测（当前 136 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
@@ -48,7 +48,7 @@ npm test           # node --test，逻辑测试
 
 在源码文件夹双击 `open-editor.cmd`（原 `启动动作工作台.cmd` 也指向此入口），或运行 `npm run editor`。本机另有桌面快捷方式“肥鱼动画编辑器”。
 
-编辑器提供 12 个确定性动画预览，含左右侧瞥、单手揉眼、假醒和睡眠微动作，支持暂停、拖动时间轴和 0.25–4 倍速。编辑器直接使用 `Motion` 与同一 WebGL 渲染器。`desktop/editor.cjs` 为开发入口；运行时服务默认禁止编辑器路由。
+编辑器提供 13 个确定性动画预览，含左右侧瞥、单手揉眼、假醒和睡眠微动作，支持暂停、拖动时间轴和 0.25–4 倍速。编辑器直接使用 `Motion` 与同一 WebGL 渲染器。`desktop/editor.cjs` 为开发入口；运行时服务默认禁止编辑器路由。
 
 日常开发直接修改源码并重启本机桌宠；只有明确要求发布时才构建 EXE/ZIP。发布清单 `desktop/runtime-files.json` 排除 index/style/app/preview/editor、测试、工具和文档，右键菜单不包含动画按钮或编辑器入口。
 
