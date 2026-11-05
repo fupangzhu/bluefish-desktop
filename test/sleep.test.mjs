@@ -67,7 +67,7 @@ test('returning after 10 hidden minutes sleeps even if the app was hidden while 
 
 
 test('waking overrides residual droopy eyelids before the sleeping posture rises',()=>{
- const m=new Motion(()=>0);m.idle=false;const far={x:900,y:900,size:240,near:false};
+ const m=new Motion(()=>0);m.wake.random=()=>.2;m.idle=false;const far={x:900,y:900,size:240,near:false};
  m.attention.droop=1;m.attention.lastNear=-30;m.attention.lastInteraction=-601;
  for(let i=0;i<300;i++){m.attention.update(dt,far);m.step(dt);}assert.equal(m.current.sleep,1);
  for(let i=0;i<300;i++){

@@ -1,5 +1,5 @@
 import {deformEar} from './ears.mjs';
-import {AHOGE_REST,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
+import {AHOGE_REST,ahogeRibbon,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
 const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;
@@ -29,7 +29,7 @@ function cleanHairBacking(canvas,x,y){
 }
 export class Renderer{
   constructor(canvas,rig){
-    this.canvas=canvas;this.rig=rig;this.solo=null;const opts={alpha:true,premultipliedAlpha:true,antialias:true,preserveDrawingBuffer:true};
+    this.canvas=canvas;this.rig=rig;this.padding=0;this.solo=null;const opts={alpha:true,premultipliedAlpha:true,antialias:true,preserveDrawingBuffer:true};
     this.gl=canvas.getContext('webgl2',opts)||canvas.getContext('webgl',opts);
     if(!this.gl)throw Error('无法启用 WebGL，请开启硬件加速');
     this.webgl2=typeof WebGL2RenderingContext!=='undefined'&&this.gl instanceof WebGL2RenderingContext;
@@ -49,7 +49,7 @@ export class Renderer{
       const cropped=document.createElement('canvas');cropped.width=tw;cropped.height=th;const c2=cropped.getContext('2d');c2.imageSmoothingEnabled=true;c2.imageSmoothingQuality='high';c2.drawImage(img,x0,y0,width,height,0,0,tw,th);
       if(meta.name==='hair_back')cleanHairBacking(cropped,(meta.pivot[0]-x0)*k,(meta.pivot[1]-y0)*k);
       if(meta.name==='ahoge')cleanHairBacking(cropped,(1198-x0)*k,(255-y0)*k);
-      this.addLayer(meta,cropped);
+      if(meta.name==='ahoge'){const pad=Math.max(1,Math.round(2*k)),image=document.createElement('canvas');image.width=tw+2*pad;image.height=th+2*pad;image.getContext('2d').drawImage(cropped,pad,pad);this.addLayer({...meta,box:[x0-2,y0-2,x1+2,y1+2]},image);}else this.addLayer(meta,cropped);
     }
     // Draw the reference's inward-facing > < eyelids in source coordinates, so
     // they use the same head projection, occlusion and scaling as the original eyes.
@@ -72,6 +72,7 @@ export class Renderer{
     const n=meta.name==='ahoge'?64:meta.name.startsWith('eye_')?6:22;
     const vertex=(i,j)=>{const x=x0+width*i/n,y=y0+height*j/n;layer.points.push([x,y,i/n,j/n,meta.name==='ahoge'?bindAhoge({x,y}):null]);};
     for(let j=0;j<n;j++)for(let i=0;i<n;i++){vertex(i,j);vertex(i+1,j);vertex(i,j+1);vertex(i+1,j);vertex(i+1,j+1);vertex(i,j+1);}
+    if(meta.name==='ahoge')layer.points=ahogeRibbon(alpha,image.width,image.height,meta.box);
     layer.data=new Float32Array(layer.points.length*4);layer.points.forEach((p,i)=>{layer.data[i*4+2]=p[2];layer.data[i*4+3]=p[3];});
     this.layers.push(layer);this.byName.set(layer.name,layer);
   }
@@ -113,9 +114,9 @@ export class Renderer{
     if(!layer||opacity<=0)return;
     const g=this.gl,[w,h]=this.rig.size,[x0,y0,x1,y1]=layer.box;
     let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    layer.points.forEach((p,i)=>{const [x,y]=this.project(p[0],p[1],s,layer,false,p[4]);layer.data[i*4]=x;layer.data[i*4+1]=y;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);});
+    layer.points.forEach((p,i)=>{const q=this.project(p[0],p[1],s,layer,false,p[4]),v=1+2*this.padding,x=q[0]/v,y=q[1]/v;layer.data[i*4]=x;layer.data[i*4+1]=y;minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);});
     layer.bounds=[minX,minY,maxX,maxY];if(opacity>.1)this.drawn.push(layer);
-    g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.aa,1.5/(this.canvas.width*.88));g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
+    g.uniform1f(this.uniform.opacity,opacity);g.uniform1f(this.uniform.aa,1.5/(this.canvas.width/(1+2*this.padding)*.88));g.uniform1f(this.uniform.eyeOpen,eyeOpen);g.uniform4f(this.uniform.crop,x0/w,y0/h,(x1-x0)/w,(y1-y0)/h);
     if(layer.eyeSide){const e=this.rig.eyes.find(e=>e.side===layer.eyeSide);g.uniform4f(this.uniform.eye,e.center[0]/w,e.center[1]/h,e.tilt,(e.box[3]-e.box[1])/h*.47);}
     g.bindTexture(g.TEXTURE_2D,layer.texture);g.bufferData(g.ARRAY_BUFFER,layer.data,g.DYNAMIC_DRAW);g.drawArrays(g.TRIANGLES,0,layer.data.length/4);this.stats.drawCalls++;this.stats.vertices+=layer.points.length;
   }
@@ -126,6 +127,7 @@ export class Renderer{
     if(s.ahogeGrab){
       const grab=s.ahogeGrab,rect=c.getBoundingClientRect(),layer=this.byName.get('ahoge');
       const aim={x:(grab.client.x-rect.left)/rect.width*2-1,y:1-(grab.client.y-rect.top)/rect.height*2};
+      aim.x*=1+2*this.padding;aim.y*=1+2*this.padding;
       // Invert the current head projection, so looking around never slides the
       // pinched material point out from under the cursor.
       let x=grab.source.x,y=grab.source.y;

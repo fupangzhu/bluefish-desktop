@@ -14,9 +14,10 @@ function resample(points,count){
   });
 }
 export const AHOGE_REST=resample(SPINE,40);
-function sample(curve,t){const i=Math.min(curve.length-2,Math.floor(t));return lerp(curve[i],curve[i+1],t-i);}
+function sample(curve,t){const i=clamp(Math.floor(t),0,curve.length-2);return lerp(curve[i],curve[i+1],t-i);}
 function tangent(curve,t){
-  const a=sample(curve,clamp(t-.6,0,curve.length-1)),b=sample(curve,clamp(t+.6,0,curve.length-1));
+  t=clamp(t,0,curve.length-1);
+  const a=sample(curve,Math.max(0,t-.6)),b=sample(curve,Math.min(curve.length-1,t+.6));
   return unit(b.x-a.x,b.y-a.y);
 }
 export function bindAhoge(point){
@@ -45,7 +46,7 @@ export function deformAhoge(binding,pose){
 export function solveAhoge(source,target,{strength=1,held=true,base=AHOGE_REST}={}){
   const grip=bindAhoge(source),g=Math.max(.12,grip.t),last=Math.min(base.length-2,Math.ceil(g)-1);
   // The lower stem is held in the hairband; bending begins above that attachment.
-  const rootIndex=Math.min(9,Math.max(0,last-1)),root=base[rootIndex],end=sample(base,g);
+  const rootIndex=Math.min(2,Math.max(0,last-1)),root=base[rootIndex],end=sample(base,g);
   const prefix=base.slice(rootIndex,last+1);prefix.push(end);
   const arc=[0];for(let i=1;i<prefix.length;i++)arc.push(arc[i-1]+distance(prefix[i-1],prefix[i]));
   const length=Math.max(.1,arc.at(-1)),restChord=Math.max(.1,distance(root,end)),axis=unit(end.x-root.x,end.y-root.y);
@@ -84,4 +85,20 @@ export function solveAhoge(source,target,{strength=1,held=true,base=AHOGE_REST}=
   // Release springs the deformed centreline back to the original art, with a small overshoot.
   if(strength!==1){pose.curve=curve.map((p,i)=>lerp(AHOGE_REST[i],p,strength));pose.correction.x*=strength;pose.correction.y*=strength;}
   return pose;
+}
+
+// A ribbon follows the material stroke; rectangular UV triangles can bridge opposite sides of the curl.
+export function ahogeRibbon(alpha,texWidth,texHeight,box,segments=160){
+ const [x0,y0,x1,y1]=box,rows=[],points=[];
+ const opaque=(x,y)=>{const u=Math.floor((x-x0)/(x1-x0)*texWidth),v=Math.floor((y-y0)/(y1-y0)*texHeight);return u>=0&&v>=0&&u<texWidth&&v<texHeight&&alpha[v*texWidth+u]>1;};
+ for(let i=0;i<=segments;i++){
+  const t=-.8+i/segments*(AHOGE_REST.length-1+1.6),center=sample(AHOGE_REST,t),dir=tangent(AHOGE_REST,t);let runs=[],start=null;
+  for(let v=-120;v<=120.5;v+=.5){const yes=v<=120&&opaque(center.x-dir.y*v,center.y+dir.x*v);if(yes&&start===null)start=v;if(!yes&&start!==null){runs.push([start,v-.5]);start=null;}}
+  const gap=r=>r[0]<=0&&r[1]>=0?0:Math.min(Math.abs(r[0]),Math.abs(r[1]));
+  runs.sort((a,b)=>gap(a)-gap(b));
+  const edge=runs.length?[runs[0][0]-2,runs[0][1]+2]:[0,0];
+  rows.push(edge.map(across=>{const x=center.x-dir.y*across,y=center.y+dir.x*across;return [x,y,(x-x0)/(x1-x0),(y-y0)/(y1-y0),{t,along:0,across}];}));
+ }
+ for(let i=0;i<segments;i++)points.push(rows[i][0],rows[i][1],rows[i+1][0],rows[i][1],rows[i+1][1],rows[i+1][0]);
+ return points;
 }

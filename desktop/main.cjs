@@ -28,7 +28,7 @@ app.whenReady().then(async()=>{
     const p=JSON.parse(fs.readFileSync(stateFile,'utf8'));
     if(typeof p.size==='number')state.size=dock.clampSize(p.size);
     for(const k of ['docked','follow','idle'])if(typeof p[k]==='boolean')state[k]=p[k];
-    if(Number.isFinite(p.x)&&Number.isFinite(p.y))saved={x:Math.round(p.x),y:Math.round(p.y)};
+    if(Number.isFinite(p.x)&&Number.isFinite(p.y))saved={x:Math.round(p.x),y:Math.round(p.y),layoutVersion:p.layoutVersion||1};
   }catch{}
 
   // ---- geometry -------------------------------------------------------------------
@@ -38,13 +38,12 @@ app.whenReady().then(async()=>{
   }
   function initialBounds(){
     if(!saved)return homeBounds();
-    const displays=screen.getAllDisplays(),L=dock.layout(state.size,state.docked);
-    if(state.docked){
-      const cx=saved.x+L.width/2,d=displays.find(d=>cx>=d.bounds.x&&cx<=d.bounds.x+d.bounds.width);
-      return d?dock.dockedBounds(d.workArea,d.bounds,state.size,cx):homeBounds();
-    }
-    const fits=displays.some(d=>{const a=d.workArea;return saved.x>=a.x&&saved.y>=a.y&&saved.x+L.width<=a.x+a.width&&saved.y+L.height<=a.y+a.height;});
-    return fits?{x:saved.x,y:saved.y,width:L.width,height:L.height}:homeBounds();
+    const displays=screen.getAllDisplays(),L=dock.layout(state.size,state.docked),legacy=saved.layoutVersion<2;
+    const oldW=state.docked?Math.round(state.size*1.3):state.size,oldH=state.docked?Math.round(state.size*.7)+Math.round(state.size*.05):state.size;
+    const center={x:saved.x+(legacy?oldW:L.width)/2,y:saved.y+(legacy?oldH:L.height)/2};
+    const d=displays.find(d=>center.x>=d.bounds.x&&center.x<=d.bounds.x+d.bounds.width&&center.y>=d.bounds.y&&center.y<=d.bounds.y+d.bounds.height);
+    if(!d)return homeBounds();
+    return state.docked?dock.dockedBounds(d.workArea,d.bounds,state.size,center.x):dock.freeBounds(d.workArea,state.size,center);
   }
   const start=initialBounds();
   lastSet={...start};
@@ -56,7 +55,7 @@ app.whenReady().then(async()=>{
     saveTimer=setTimeout(()=>{
       if(!alive(win))return;
       const b=lastSet||win.getBounds();
-      try{fs.mkdirSync(path.dirname(stateFile),{recursive:true});fs.writeFileSync(stateFile,JSON.stringify({x:b.x,y:b.y,size:state.size,docked:state.docked,follow:state.follow,idle:state.idle}));}catch{}
+      try{fs.mkdirSync(path.dirname(stateFile),{recursive:true});fs.writeFileSync(stateFile,JSON.stringify({layoutVersion:2,x:b.x,y:b.y,size:state.size,docked:state.docked,follow:state.follow,idle:state.idle}));}catch{}
     },180);
   }
   function broadcast(){
@@ -86,7 +85,7 @@ app.whenReady().then(async()=>{
     if(state.docked)b=dock.dockedBounds(a,d.bounds,state.size,cx);
     else{
       const L=dock.layout(state.size,false);
-      b=dock.freeBounds(a,state.size,{x:cx,y:fromDocked?a.y+a.height-12-L.height/2:cy});
+      b=dock.freeBounds(a,state.size,{x:cx,y:fromDocked?a.y+a.height-12-state.size/2:cy});
     }
     updateTop();applyBounds(b);
     if(drag){const active=drag.active;drag=createDrag(screen.getCursorScreenPoint(),lastSet,{lockY:state.docked});drag.active=active;}
@@ -215,7 +214,7 @@ app.whenReady().then(async()=>{
     state.docked=false;
     const d=screen.getDisplayNearestPoint(p),L=dock.layout(state.size,false);
     // Bottom edge slightly above the cursor, centered on the cursor x.
-    const b=dock.freeBounds(d.workArea,state.size,{x:p.x,y:p.y-6-L.height/2});
+    const b=dock.freeBounds(d.workArea,state.size,{x:p.x,y:p.y-6-state.size/2});
     updateTop();applyBounds(b);
     drag=createDrag(p,b);drag.active=true;
     broadcast();save();
@@ -224,7 +223,7 @@ app.whenReady().then(async()=>{
     const was=drag;drag=null;
     if(!was||!was.active||state.docked||!lastSet)return;
     const d=screen.getDisplayMatching(lastSet);
-    if(dock.shouldDock(lastSet,d.workArea)){state.docked=true;relayout();broadcast();save();}
+    if(dock.shouldDock(lastSet,d.workArea,state.size)){state.docked=true;relayout();broadcast();save();}
   }
   function dragStep(p){
     // Always use the computed size; the native size can drift by a DIP at fractional DPI.
@@ -247,7 +246,7 @@ app.whenReady().then(async()=>{
     const p=screen.getCursorScreenPoint();
     if(drag)dragStep(p);
     const r=win.getContentBounds(),area=screen.getDisplayMatching(r).workArea;
-    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-r.height*.5)/Math.max(200,area.height*.45),-1,1)});
+    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
   },33);
   // Keep the docked pet above the taskbar, which also sits in the topmost band.
   topTimer=setInterval(()=>{
@@ -275,7 +274,7 @@ app.whenReady().then(async()=>{
       };
       try{
         let ready=false;
-        for(let i=0;i<100&&!ready;i++){try{ready=await win.webContents.executeJavaScript('!!window.bluefish');}catch{}if(!ready)await sleep(100);}
+        for(let i=0;i<100&&!ready;i++){try{ready=await win.webContents.executeJavaScript('!!window.bluefish?.renderer');}catch{}if(!ready)await sleep(100);}
         evidence.ready=ready;
         await sleep(600);
         evidence.state=snapshot();
@@ -285,7 +284,7 @@ app.whenReady().then(async()=>{
         await sleep(300);await shot(win.webContents,'smoke-pet-free.png');
         await geometry('docked240',{size:240,docked:true});
         await sleep(300);await shot(win.webContents,'smoke-pet-docked.png');
-        try{evidence.hitTest=await win.webContents.executeJavaScript('window.bluefish && window.bluefish.hitTest ? window.bluefish.hitTest(innerWidth/2, innerHeight*0.4) : null');}catch(e){evidence.hitTest={error:e.message};}
+        try{evidence.hitTest=await win.webContents.executeJavaScript('(()=>{const b=window.bluefish,p=b.position(),s=b.state.size;return {head:b.hitTest(p.left+s*.5,p.top+s*.46),gutter:b.hitTest(1,1)};})()');}catch(e){evidence.hitTest={error:e.message};}
         evidence.alwaysOnTop=win.isAlwaysOnTop();evidence.tray=!tray.isDestroyed();
         const wa=screen.getPrimaryDisplay().workArea;
         showMenuAt({x:Math.round(wa.x+wa.width*.5),y:Math.round(wa.y+wa.height*.25)});

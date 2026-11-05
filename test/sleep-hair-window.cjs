@@ -1,0 +1,36 @@
+const {app,BrowserWindow}=require('electron');const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');const {pathToFileURL}=require('node:url');const dock=require('../desktop/dock.cjs');
+const REPO=path.resolve(__dirname,'..'),OUT=path.join(REPO,'.test-output/sleep-hair');fs.mkdirSync(OUT,{recursive:true});app.setPath('userData',path.join(OUT,'profile'));
+const preload=path.join(OUT,'preload.cjs');fs.writeFileSync(preload,`const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('pet',{onState:cb=>ipcRenderer.on('state',(_e,p)=>cb(p)),onPointer:()=>{},onAction:()=>{},setInteractive:()=>{},drag:()=>{},menu:()=>{},zoom:()=>{}});`);
+app.commandLine.appendSwitch('force-device-scale-factor','1.5');const wait=ms=>new Promise(r=>setTimeout(r,ms));let win,server;
+app.whenReady().then(async()=>{const evidence={};try{
+ const {createServer}=await import(pathToFileURL(path.join(REPO,'server.mjs')));server=createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ win=new BrowserWindow({width:920,height:506,show:false,frame:false,transparent:true,webPreferences:{preload,offscreen:true,backgroundThrottling:false,contextIsolation:true,sandbox:true}});const wc=win.webContents,js=s=>wc.executeJavaScript(s);
+ await win.loadURL(base+'/overlay.html');for(let i=0;i<200;i++){if(await js('!!window.bluefish?.renderer'))break;await wait(100);}assert.ok(await js('!!window.bluefish?.renderer'));
+ const shot=async name=>fs.writeFileSync(path.join(OUT,name+'.png'),(await wc.capturePage()).toPNG());
+ const configure=async(size,docked)=>{const l=dock.layout(size,docked);win.setContentSize(l.width,l.height);wc.send('state',{size,docked,follow:false,idle:true,reduced:false,pose:{yaw:0,pitch:0,roll:0}});await wait(220);await js('bluefish.pause(false);bluefish.motion.reset();bluefish.motion.nextBlink=Infinity;bluefish.setPointer({x:-1000,y:-1000,gx:0,gy:0})');await wait(160);};
+ evidence.ribbon=await js(`(()=>{const l=bluefish.renderer.byName.get('ahoge'),c=document.createElement('canvas');c.width=l.texWidth;c.height=l.texHeight;const g=c.getContext('2d');g.fillStyle='#fff';for(let i=0;i<l.points.length;i+=3){g.beginPath();for(let k=0;k<3;k++){const p=l.points[i+k],x=p[2]*c.width,y=p[3]*c.height;k?g.lineTo(x,y):g.moveTo(x,y);}g.closePath();g.fill();}const d=g.getImageData(0,0,c.width,c.height).data;let all=0,missing=0;for(let i=0;i<l.alpha.length;i++)if(l.alpha[i]>24){all++;if(d[i*4+3]<32)missing++;}return {vertices:l.points.length,all,missing,coverage:1-missing/all};})()`);
+ assert.ok(evidence.ribbon.coverage>.995,JSON.stringify(evidence.ribbon));evidence.pulls=[];
+ for(const size of [150,460])for(const docked of [false,true]){
+  await configure(size,docked);await js('bluefish.pause(true)');
+  const checks=await js(`(async()=>{const b=bluefish,r=b.renderer,l=r.byName.get('ahoge'),p=b.position(),s=b.state.size,rect=r.canvas.getBoundingClientRect(),{AHOGE_REST}=await import('./src/ahoge.mjs'),out=[];
+   for(const pose of [{yaw:0,pitch:0,roll:0},{yaw:-8,pitch:-12,roll:-10},{yaw:18,pitch:12,roll:10}])for(const index of [16,35])for(const angle of [-180,-135,-90,-45,0,45,90,135]){
+    const state={...b.motion.current,...pose,hair:pose.yaw,ahogeWag:0,ahogeDroop:0,secondary:false,breath:0},source=AHOGE_REST[index],q=r.project(source.x,source.y,state,l,true),a=angle*Math.PI/180,client={x:p.left+(q[0]+1)*s/2+Math.cos(a)*s,y:p.top+(1-q[1])*s/2+Math.sin(a)*s};
+    r.render({...state,ahogeGrab:{source,client,strength:1,held:true}});
+    const [minx,miny,maxx,maxy]=l.bounds,box={left:rect.left+(minx+1)*rect.width/2,right:rect.left+(maxx+1)*rect.width/2,top:rect.top+(1-maxy)*rect.height/2,bottom:rect.top+(1-miny)*rect.height/2};
+    out.push({size:s,docked:b.state.docked,index,angle,pose,box,canvas:l.bounds,stretch:r.ahogePose.stretch,root:r.ahogePose.rootIndex,frame:{w:innerWidth,h:innerHeight}});
+   }return out;})()`);
+  evidence.pulls.push(...checks);
+  // Ledge occlusion below the taskbar is intentional; other edges must not truncate the hair.
+  for(const c of checks){assert.ok(c.canvas.every(v=>Math.abs(v)<1),JSON.stringify(c));assert.ok(c.box.left>=0&&c.box.right<=c.frame.w&&c.box.top>=0,JSON.stringify(c));if(!docked)assert.ok(c.box.bottom<=c.frame.h,JSON.stringify(c));assert.ok(c.stretch<=.180001);assert.ok(c.root<=2);}
+ }
+ await configure(460,true);
+ await js('bluefish.motion.attention.lastInteraction=-601;bluefish.motion.attention.droop=1;bluefish.motion.attention.lastNear=-30');
+ for(let i=0;i<100;i++){if(await js('bluefish.motion.current.sleep===1'))break;await wait(80);}assert.equal(await js('bluefish.motion.current.sleeping'),true);
+ await shot('asleep');await js('bluefish.motion.doze.nextEar=bluefish.motion.doze.time+.15');await wait(175);await shot('sleep-ear');assert.equal(await js('bluefish.motion.current.sleeping'),true);
+ await js('bluefish.motion.wake.random=()=>.05;true');const point=await js('(()=>{const b=bluefish,p=b.position();return {x:Math.round(p.left+b.state.size*.5),y:Math.round(p.top+b.state.size*.46)};})()');
+ assert.ok(await js(`bluefish.hitTest(${point.x},${point.y})`));wc.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});wc.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+ const frames=[];let sawRub=false,sawSlow=false;for(let i=0;i<130;i++){await wait(50);const s=await js('({...bluefish.motion.current,elapsed:bluefish.motion.wake.elapsed})');if(i%6===0)frames.push({t:s.elapsed,left:s.left,hands:s.rubEyes,sleep:s.sleep,blocked:s.movementBlocked});if(s.rubEyes>.95&&s.left===0){sawRub=true;if(i%4===0)await shot('rub-'+i);if(!evidence.hands)evidence.hands=await js(`(async()=>{const b=bluefish,r=b.renderer,m=b.motion.current,p=b.position(),s=b.state.size,{eyeRubHands}=await import('./src/hands.mjs');const eyes=['l','r'].map(side=>{const e=b.rig.eyes.find(e=>e.side===side),l=r.byName.get('eye_'+side+'_open'),q=r.project(e.center[0],e.center[1],m,l);return {x:p.left+(q[0]+1)*s/2,y:p.top+(1-q[1])*s/2,q};});const canvas=document.querySelector('#hands'),g=canvas.getContext('2d'),data=g.getImageData(0,0,canvas.width,canvas.height).data;let painted=0;for(let i=3;i<data.length;i+=4)if(data[i]>24)painted++;return {eyes,hands:eyeRubHands(b.last.hands,{eyes,cx:innerWidth/2,ledgeY:b.layout().ledgeY,size:s,mix:m.rubEyes,phase:m.rubPhase}),painted,skin:b.skin,cur:{mix:m.rubEyes,phase:m.rubPhase},layout:b.layout()};})()`);}if(s.left>.2&&s.left<.8&&s.elapsed>3.2){sawSlow=true;if(i%4===0)await shot('open-'+i);}}
+ assert.ok(sawRub&&sawSlow);evidence.wake=frames;
+ await win.loadURL(base+'/');for(let i=0;i<200;i++){if(await js('!!window.bluefish?.renderer'))break;await wait(100);}await js('bluefish.motion.wake.random=()=>.05;bluefish.motion.wake.start();bluefish.motion.wake.elapsed=2');await wait(200);await shot('console-rub');
+ evidence.passed=true;console.log(JSON.stringify({ribbon:evidence.ribbon,pulls:evidence.pulls.length,passed:true}));
+}catch(error){evidence.error=error.stack;console.error(error);process.exitCode=1;}finally{fs.writeFileSync(path.join(OUT,'result.json'),JSON.stringify(evidence,null,2));win?.destroy();server?.close();app.exit(process.exitCode||0);}});

@@ -8,29 +8,29 @@ test('clampSize clamps to 150-460, rounds and defaults invalid input to 240',()=
   for(const bad of [undefined,null,NaN,'abc','300',{},Infinity])assert.equal(dock.clampSize(bad),240);
 });
 test('layout: docked and free geometry',()=>{
-  assert.deepEqual(dock.layout(240,true),{width:312,height:180,grip:12});
-  assert.deepEqual(dock.layout(150,true),{width:195,height:113,grip:8});
-  assert.deepEqual(dock.layout(460,true),{width:598,height:345,grip:23});
-  assert.deepEqual(dock.layout(240,false),{width:240,height:240,grip:0});
-  assert.deepEqual(dock.layout(9999,false),{width:460,height:460,grip:0});
+  assert.deepEqual(dock.layout(240,true),{width:480,height:264,grip:12});
+  assert.deepEqual(dock.layout(150,true),{width:300,height:165,grip:8});
+  assert.deepEqual(dock.layout(460,true),{width:920,height:506,grip:23});
+  assert.deepEqual(dock.layout(240,false),{width:408,height:408,grip:0});
+  assert.deepEqual(dock.layout(9999,false),{width:782,height:782,grip:0});
 });
 test('dockedBounds overlaps the taskbar by grip and clamps horizontally',()=>{
   const b=dock.dockedBounds(work,display,240,500);
-  assert.deepEqual(b,{x:344,y:1040+12-180,width:312,height:180});
+  assert.deepEqual(b,{x:260,y:788,width:480,height:264});
   assert.equal(b.y+b.height,work.y+work.height+12);
-  assert.equal(dock.dockedBounds(work,display,240,-500).x,0);
-  assert.equal(dock.dockedBounds(work,display,240,99999).x,1920-312);
+  assert.equal(dock.dockedBounds(work,display,240,-500).x,-84);
+  assert.equal(dock.dockedBounds(work,display,240,99999).x,1920-396);
 });
 test('dockedBounds respects a non-zero display origin',()=>{
   const d2={x:1920,y:0,width:1280,height:1024},w2={x:1920,y:0,width:1280,height:984};
   const b=dock.dockedBounds(w2,d2,300,1920+100);
-  assert.equal(b.x,1920);assert.equal(b.y+b.height,984+15);
+  assert.equal(b.x+300*.35,1920);assert.equal(b.y+b.height,984+15);
 });
-test('freeBounds is a square clamped inside the work area',()=>{
-  assert.deepEqual(dock.freeBounds(work,240,{x:500,y:500}),{x:380,y:380,width:240,height:240});
-  assert.deepEqual(dock.freeBounds(work,240,{x:-50,y:-50}),{x:0,y:0,width:240,height:240});
+test('freeBounds keeps the visible square on screen and reserves transparent pull space',()=>{
+  assert.deepEqual(dock.freeBounds(work,240,{x:500,y:500}),{x:296,y:296,width:408,height:408});
+  assert.deepEqual(dock.freeBounds(work,240,{x:-50,y:-50}),{x:-84,y:-84,width:408,height:408});
   const b=dock.freeBounds(work,240,{x:99999,y:99999});
-  assert.equal(b.x+b.width,1920);assert.equal(b.y+b.height,1040);
+  assert.equal(b.x+b.width-84,1920);assert.equal(b.y+b.height-84,1040);
 });
 test('homeCenterX is 20% across the work area',()=>{
   assert.equal(dock.homeCenterX(work),384);
@@ -62,4 +62,9 @@ test('popupPosition opens at the point, flips up/left and clamps inside the work
   assert.deepEqual(dock.popupPosition({x:1900,y:1000},sz,work),{x:1620,y:600,width:280,height:400});
   const tiny={x:0,y:0,width:300,height:300};
   assert.deepEqual(dock.popupPosition({x:290,y:290},sz,tiny),{x:10,y:0,width:280,height:400});
+});
+
+test('free docking uses the visible body bottom, ignoring the transparent pull margin',()=>{
+ const b=dock.freeBounds(work,240,{x:500,y:900});assert.equal(dock.shouldDock(b,work,240),true);
+ const higher=dock.freeBounds(work,240,{x:500,y:880});assert.equal(dock.shouldDock(higher,work,240),false);
 });

@@ -3,6 +3,7 @@ import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {hydrate,icons} from './icons.mjs';
 import {TouchInput} from './touch.mjs';
+import {drawHands,eyeRubHands,makeSkin,sampleSkin} from './hands.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const ctl=window.petControl||null;
@@ -10,7 +11,18 @@ const canvas=$('#avatar'),stage=$('#stage'),statusDot=$('#status'),statusWrap=$(
 const motion=new Motion();motion.reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const AXES=['yaw','pitch','roll'],MODES=['follow','idle','reduced','docked'];
 const local={size:240,docked:true,follow:true,idle:true,reduced:motion.reduced,pose:{yaw:0,pitch:0,roll:0}};
-let renderer=null,rig=null;
+let renderer=null,rig=null,skin=makeSkin();
+const gestureCanvas=document.createElement('canvas');gestureCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';stage.append(gestureCanvas);
+const gestureCtx=gestureCanvas.getContext('2d');
+function drawGesture(){
+ const rect=stage.getBoundingClientRect(),r=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),g=gestureCtx;
+ const w=Math.round(rect.width*dpr),h=Math.round(rect.height*dpr);if(gestureCanvas.width!==w||gestureCanvas.height!==h){gestureCanvas.width=w;gestureCanvas.height=h;}
+ g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,w,h);const cur=motion.current;if(!cur?.rubEyes||!renderer||renderer.solo)return;
+ const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),l=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],cur,l);return {x:r.left-rect.left+(q[0]+1)*r.width/2,y:r.top-rect.top+(1-q[1])*r.height/2};});
+ const cx=r.left-rect.left+r.width/2,ledgeY=r.bottom-rect.top;
+ g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=cur.rubEyes;
+ drawHands(g,{cx,ledgeY,s:r.width,skin,hands:eyeRubHands([],{eyes,cx,ledgeY,size:r.width,mix:cur.rubEyes,phase:cur.rubPhase})});g.globalAlpha=1;
+}
 
 /* Status is a single dot; the text lives in the tooltip. */
 function setStatus(state,text){statusDot.dataset.state=state;statusWrap.title=text;statusWrap.setAttribute('aria-label',text);}
@@ -132,7 +144,7 @@ if(ctl){ctl.onState(apply);try{apply(await ctl.getState());}catch(error){fail(er
 
 try{
   const response=await fetch('assets/rig.json');if(!response.ok)throw Error('角色文件加载失败');rig=await response.json();
-  renderer=await new Renderer(canvas,rig).init();setStatus('ok','本地运行中');
+  renderer=await new Renderer(canvas,rig).init();skin=await sampleSkin();setStatus('ok','本地运行中');
   const solo=$('#soloLayer');
   for(const layer of rig.layers){const opt=document.createElement('option');opt.value=layer.name;opt.textContent=layer.name+(layer.empty?'（空层）':'');solo.append(opt);}
   solo.addEventListener('change',()=>renderer.solo=solo.value||null);
@@ -146,7 +158,7 @@ try{
   function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
     const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
     motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:!!touchInput.active});
-    wakeFlag=false;motion.step(dt);renderer.render(motion.current);}last=now;requestAnimationFrame(draw);}
+    wakeFlag=false;motion.step(dt);renderer.render(motion.current);drawGesture();}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);
   canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();endTouch();paused=true;setStatus('error','显卡上下文已暂停');});
   canvas.addEventListener('webglcontextrestored',()=>location.reload());

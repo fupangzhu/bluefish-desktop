@@ -2,7 +2,7 @@ import {headContact} from './attention.mjs';
 import {Motion} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {Peek} from './peek.mjs';
-import {drawHands,makeSkin,sampleSkin} from './hands.mjs';
+import {drawHands,eyeRubHands,makeSkin,sampleSkin} from './hands.mjs';
 import {TouchInput} from './touch.mjs';
 
 // ---- Tuning knobs ---------------------------------------------------------------------------------
@@ -10,6 +10,7 @@ import {TouchInput} from './touch.mjs';
 // this art row lands exactly on the taskbar edge; 0.73 covers the lower rim of the right eye.
 export const CUT_ART_Y=0.73;
 const RENDER_Y_SCALE=1.76;  // renderer.project: clip.y = -(y-0.5)*1.76
+const VIEW_PAD=.35;
 const GRIP_RATIO=0.05;      // fingertip overhang below the ledge (x size); main computes the window the same way
 const NEAR_MIN=180;         // px, "near" = within max(1.05*s, NEAR_MIN) of the head centre
 const NEAR_RATIO=1.05;
@@ -44,25 +45,30 @@ function layout(){
   L={W,H,s,docked,grip,ledgeY:H-grip,dpr};
   peek.setSize(s);
   clip.style.height=L.ledgeY+'px';
-  canvas.style.width=canvas.style.height=s+'px';
+  canvas.style.width=canvas.style.height=s*(1+2*VIEW_PAD)+'px';
   handsCanvas.width=Math.round(W*dpr);handsCanvas.height=Math.round(H*dpr);
-  handsCanvas.style.display=docked?'':'none';
+  handsCanvas.style.display='';
   taskbar.style.height=grip+'px';
   place({offsetX:peek.head.value*s,bob:0});
 }
 const headFraction=()=>(1+(CUT_ART_Y-0.5)*RENDER_Y_SCALE)/2;   // where the cut row sits inside the canvas (0..1)
 function place(out){
   const {W,H,s,docked,ledgeY}=L;
-  const sleep=motion.current?.sleep||0;
-  if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob+s*.085*sleep;}
-  else{pos.left=(W-s)/2;pos.top=(H-s)/2+s*.025*sleep;}
-  canvas.style.transform=`translate(${pos.left}px,${pos.top}px)`;
+  const sleep=motion.current?.sleep||0,rubLift=(motion.current?.rubLift||0)*s;
+  if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob+s*.085*sleep-rubLift;}
+  else{pos.left=(W-s)/2;pos.top=(H-s)/2+s*.025*sleep-rubLift;}
+  canvas.style.transform=`translate(${pos.left-VIEW_PAD*s}px,${pos.top-VIEW_PAD*s}px)`;
 }
 function drawHandsFrame(out){
   const g=handsCtx;g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,handsCanvas.width,handsCanvas.height);
-  if(!L.docked)return;
+  if(!L.docked&&!(motion.current?.rubEyes>0))return;
   g.setTransform(L.dpr,0,0,L.dpr,0,0);
-  drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands:out.hands,skin,grip:L.grip});
+  const cur=motion.current;let hands=out.hands;
+  if(cur?.rubEyes>0){
+    const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),layer=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],{...cur,roll:cur.roll+out.roll},layer);return {x:pos.left+(q[0]+1)*L.s/2,y:pos.top+(1-q[1])*L.s/2};});
+    hands=eyeRubHands(hands,{eyes,cx:L.W/2,ledgeY:L.ledgeY,size:L.s,mix:cur.rubEyes,phase:cur.rubPhase});
+  }
+  drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands,skin,grip:L.grip});
 }
 function handsAlpha(x,y){
   if(!L.docked)return 0;
@@ -74,11 +80,11 @@ function hitTest(x,y){
   if(handsAlpha(x,y)>24)return true;
   if(!renderer)return false;
   if(L.docked&&y>=L.ledgeY)return false;
-  return renderer.hitTest(x-pos.left,y-pos.top);
+  return renderer.hitTest(x-pos.left+VIEW_PAD*L.s,y-pos.top+VIEW_PAD*L.s);
 }
 function partAt(x,y){
   if(handsAlpha(x,y)>24||(L.docked&&y>=L.ledgeY))return null;
-  return renderer?.pickPart(x-pos.left,y-pos.top)||null;
+  return renderer?.pickPart(x-pos.left+VIEW_PAD*L.s,y-pos.top+VIEW_PAD*L.s)||null;
 }
 
 // ---- state coming from the main process ---------------------------------------------------------------
@@ -104,7 +110,7 @@ function onDown(e){
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
   if(motion.attention.current.sleeping){wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
   const part=partAt(e.clientX,e.clientY);
-  const grip=part==='ahoge'?renderer.pickHit(e.clientX-pos.left,e.clientY-pos.top):null;
+  const grip=part==='ahoge'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
   touchInput.begin(part,{x:e.clientX,y:e.clientY},L.s,grip);
   if(!part)motion.blink();pokeFlag=true;
   lastHit=true;pet?.setInteractive(true);
@@ -165,7 +171,7 @@ if(pet)pet.onState(applyState);
 layout();
 try{
   const response=await fetch('assets/rig.json');if(!response.ok)throw Error('角色文件加载失败');rig=await response.json();
-  renderer=await new Renderer(canvas,rig).init();
+  renderer=await new Renderer(canvas,rig).init();renderer.padding=VIEW_PAD;
   skin=await sampleSkin();
   if(pet){
     pet.onPointer(setPointer);
