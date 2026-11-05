@@ -9,27 +9,30 @@ const ease=t=>{t=clamp(t,0,1);return t*t*t*(t*(t*6-15)+10);};
 export const ahogeRestAngle=(droop,side=1)=>clamp(droop,0,1)*(95*clamp(side,-1,1)-20)||0;
 export const AHOGE_ROOT={x:1143.222,y:503.018};
 export const AHOGE_COLORS={top:[65,105,231],root:[39,76,193]};
-// A clamped cubic B-spline (six controls, two interior knots). Both boundaries
-// share its knot vector, so each side is C2 continuous rather than a wavy offset profile.
-const KNOTS=[0,0,0,0,1/3,2/3,1,1,1,1];
-const CONTROL=[[1143.222,503.018],[1093,363],[1228,128],[1410,125],[1580,270],[1495,365]].map(([x,y])=>({x,y}));
-function spline(points,t,degree=3,knots=KNOTS){
+// Five-control quadratic B-spline. The two simple knots preserve a continuous
+// tangent, while fewer free controls keep the outline broad and uncomplicated.
+export const AHOGE_DEGREE=2;
+const KNOTS=[0,0,0,1/3,2/3,1,1,1];
+const CONTROL=[[1143.222,503.018],[1068.222,293.018],[1336.7885,92.9332],[1541.3577,225.3975],[1495,365]].map(([x,y])=>({x,y}));
+function spline(points,t,degree=AHOGE_DEGREE,knots=KNOTS){
  t=clamp(t,0,1);let span=degree;while(span<points.length-1&&t>=knots[span+1])span++;
  const d=Array.from({length:degree+1},(_,i)=>({...points[span-degree+i]}));
  for(let r=1;r<=degree;r++)for(let j=degree;j>=r;j--){const k=span-degree+j,a=(t-knots[k])/(knots[j+1+span-r]-knots[k]);d[j]=lerp(d[j-1],d[j],a);}
  return d[degree];
 }
-function derivative(points,t){const d=points.slice(0,-1).map((p,i)=>{const f=3/(KNOTS[i+4]-KNOTS[i+1]);return {x:(points[i+1].x-p.x)*f,y:(points[i+1].y-p.y)*f};});return spline(d,t,2,KNOTS.slice(1,-1));}
-const RADII=[2.8,24,40,36,24,0];
+function derivative(points,t){const d=points.slice(0,-1).map((p,i)=>{const f=AHOGE_DEGREE/(KNOTS[i+AHOGE_DEGREE+1]-KNOTS[i+1]);return {x:(points[i+1].x-p.x)*f,y:(points[i+1].y-p.y)*f};});return spline(d,t,AHOGE_DEGREE-1,KNOTS.slice(1,-1));}
+const RADII=[2.8,30,40,32,0];
 const EDGES=[-1,1].map(side=>CONTROL.map((p,i)=>{const a=CONTROL[Math.max(0,i-1)],b=CONTROL[Math.min(CONTROL.length-1,i+1)],n=unit(a.y-b.y,b.x-a.x);return {x:p.x+n.x*RADII[i]*side,y:p.y+n.y*RADII[i]*side};}));
 export const AHOGE_REST=Array.from({length:80},(_,i)=>spline(CONTROL,i/79));
 export const ahogeEdges=t=>EDGES.map(points=>spline(points,t));
 export function ahogeWidth(t){const [a,b]=ahogeEdges(t);return distance(a,b)/2;}
+// Dense material samples also use degree two; no cubic interpolation is hidden
+// beneath the quadratic visible outline.
+const MATERIAL_KNOTS=new Map();
 function sample(curve,t){
- const i=clamp(Math.floor(t),0,curve.length-2),u=t-i,a=curve[i],b=curve[i+1],before=curve[Math.max(0,i-1)],after=curve[Math.min(curve.length-1,i+2)];
- const m0=i?{x:(b.x-before.x)/2,y:(b.y-before.y)/2}:{x:b.x-a.x,y:b.y-a.y},m1=i+2<curve.length?{x:(after.x-a.x)/2,y:(after.y-a.y)/2}:{x:b.x-a.x,y:b.y-a.y};
- const h0=2*u*u*u-3*u*u+1,h1=u*u*u-2*u*u+u,h2=-2*u*u*u+3*u*u,h3=u*u*u-u*u;
- return {x:h0*a.x+h1*m0.x+h2*b.x+h3*m1.x,y:h0*a.y+h1*m0.y+h2*b.y+h3*m1.y};
+ const n=curve.length;
+ if(!MATERIAL_KNOTS.has(n))MATERIAL_KNOTS.set(n,[0,0,0,...Array.from({length:n-3},(_,i)=>(i+1)/(n-2)),1,1,1]);
+ return spline(curve,t/(n-1),AHOGE_DEGREE,MATERIAL_KNOTS.get(n));
 }
 function tangent(curve,t){t=clamp(t,0,curve.length-1);const a=sample(curve,Math.max(0,t-.02)),b=sample(curve,Math.min(curve.length-1,t+.02));return unit(b.x-a.x,b.y-a.y);}
 function bindingAt(point,t){const center=sample(AHOGE_REST,t),dir=tangent(AHOGE_REST,t),dx=point.x-center.x,dy=point.y-center.y;return {t,along:dx*dir.x+dy*dir.y,across:-dx*dir.y+dy*dir.x};}
@@ -75,7 +78,8 @@ export function solveAhoge(source,target,{strength=1,held=true,base=AHOGE_REST,b
 }
 const basis=t=>CONTROL.map((_,k)=>spline(CONTROL.map((_,j)=>({x:j===k?1:0,y:0})),t).x);
 const FIT=Array.from({length:65},(_,i)=>{const t=i/64;return {t,b:basis(t),edges:ahogeEdges(t)};});
-const NORMAL=Array.from({length:3},(_,i)=>Array.from({length:3},(_,j)=>FIT.reduce((n,r)=>n+r.b[i+2]*r.b[j+2],0)));
+const FREE_COUNT=CONTROL.length-3;
+const NORMAL=Array.from({length:FREE_COUNT},(_,i)=>Array.from({length:FREE_COUNT},(_,j)=>FIT.reduce((n,r)=>n+r.b[i+2]*r.b[j+2],0)));
 function linearSolve(matrix,values){
  const n=matrix.length,m=matrix.map((r,i)=>[...r,values[i]]);
  for(let k=0;k<n;k++){let pivot=k;for(let j=k+1;j<n;j++)if(Math.abs(m[j][k])>Math.abs(m[pivot][k]))pivot=j;[m[k],m[pivot]]=[m[pivot],m[k]];const d=m[k][k];for(let j=k;j<n+1;j++)m[k][j]/=d;for(let i=0;i<n;i++)if(i!==k){const q=m[i][k];for(let j=k;j<n+1;j++)m[i][j]-=q*m[k][j];}}
@@ -97,14 +101,14 @@ function validOutline(pose){
 function fitOutline(pose,grip,goal){
  const outline=EDGES.map((edge,side)=>{
   const values=FIT.map(r=>deformAhoge(bindingAt(r.edges[side],r.t*(AHOGE_REST.length-1)),pose)),tip=values.at(-1);
-  const coords=['x','y'].map(key=>linearSolve(NORMAL,Array.from({length:3},(_,i)=>FIT.reduce((n,r,j)=>n+r.b[i+2]*(values[j][key]-r.b[0]*edge[0][key]-r.b[1]*edge[1][key]-r.b[5]*tip[key]),0))));
-  return edge.map((p,i)=>i<2?{...p}:i===5?{...tip}:{x:coords[0][i-2],y:coords[1][i-2]});
+  const coords=['x','y'].map(key=>linearSolve(NORMAL,Array.from({length:FREE_COUNT},(_,i)=>FIT.reduce((n,r,j)=>n+r.b[i+2]*(values[j][key]-r.b[0]*edge[0][key]-r.b[1]*edge[1][key]-r.b.at(-1)*tip[key]),0))));
+  return edge.map((p,i)=>i<2?{...p}:i===edge.length-1?{...tip}:{x:coords[0][i-2],y:coords[1][i-2]});
  });
  pose.outline=outline;
  // Exact material pin while the first two controls keep the attachment and tangent fixed.
  if(Number.isFinite(grip.u)){
   const actual=deformAhoge(grip,pose),b=basis(grip.t/(AHOGE_REST.length-1)),den=b.slice(2).reduce((n,x)=>n+x*x,0);
-  if(den>1e-5){for(const edge of outline)for(let i=2;i<6;i++){const w=b[i]/den;edge[i].x+=(goal.x-actual.x)*w;edge[i].y+=(goal.y-actual.y)*w;}}
+  if(den>1e-5){for(const edge of outline)for(let i=2;i<edge.length;i++){const w=b[i]/den;edge[i].x+=(goal.x-actual.x)*w;edge[i].y+=(goal.y-actual.y)*w;}}
  }
 }
 export function ahogeGeometry(segments=256){
@@ -114,10 +118,10 @@ export function ahogeGeometry(segments=256){
 }
 export function ahogeBounds(){const p=ahogeGeometry();return [Math.floor(Math.min(...p.map(p=>p[0])))-2,Math.floor(Math.min(...p.map(p=>p[1])))-2,Math.ceil(Math.max(...p.map(p=>p[0])))+2,Math.ceil(Math.max(...p.map(p=>p[1])))+2];}
 function svgSegments(points){
- return [0,1/3,2/3].map(a=>{const b=a+1/3,p=spline(points,a),q=spline(points,b),d=derivative(points,a),e=derivative(points,b),h=(b-a)/3;return [p,{x:p.x+d.x*h,y:p.y+d.y*h},{x:q.x-e.x*h,y:q.y-e.y*h},q];});
+ return [0,1/3,2/3].map(a=>{const b=a+1/3,p=spline(points,a),q=spline(points,b),d=derivative(points,a),h=(b-a)/2;return [p,{x:p.x+d.x*h,y:p.y+d.y*h},q];});
 }
 export function ahogeSVG(){
- const f=p=>p.x.toFixed(4)+' '+p.y.toFixed(4),left=svgSegments(EDGES[0]),right=svgSegments(EDGES[1]),curve=c=>'C'+f(c[1])+' '+f(c[2])+' '+f(c[3]);
+ const f=p=>p.x.toFixed(4)+' '+p.y.toFixed(4),left=svgSegments(EDGES[0]),right=svgSegments(EDGES[1]),curve=c=>'Q'+f(c[1])+' '+f(c[2]);
  const path='M'+f(left[0][0])+left.map(curve).join('')+right.toReversed().map(c=>curve(c.toReversed())).join('')+'Z';
  return `<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="2048" viewBox="0 0 2048 2048"><defs><linearGradient id="blue" gradientUnits="userSpaceOnUse" x1="0" y1="140" x2="0" y2="505"><stop stop-color="rgb(${AHOGE_COLORS.top})"/><stop offset="1" stop-color="rgb(${AHOGE_COLORS.root})"/></linearGradient></defs><path fill="url(#blue)" d="${path}"/></svg>`;
 }

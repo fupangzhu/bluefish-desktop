@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AHOGE_REST,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,solveAhoge} from '../src/ahoge.mjs';
+import {AHOGE_DEGREE,AHOGE_REST,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,solveAhoge} from '../src/ahoge.mjs';
 import {Touch} from '../src/touch.mjs';
 const near=(a,b,eps=.001)=>assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<eps,JSON.stringify({a,b}));
 
@@ -68,29 +68,32 @@ test('idle off, reduced motion, and active pinches suppress the automatic ear ti
   touch.endPull();touch.twitch('r');assert.ok(touch.nextEarAt>=touch.idleTime+60);
 });
 
-test('each boundary is a low-order spline with continuous tangent and curvature',()=>{
- const svg=ahogeSVG();assert.equal((svg.match(/C[0-9]/g)||[]).length,6);assert.equal((svg.match(/L[0-9]/g)||[]).length,0);
+test('each boundary uses three quadratic segments with continuous tangents',()=>{
+ const svg=ahogeSVG();assert.equal(AHOGE_DEGREE,2);assert.equal((svg.match(/Q[0-9]/g)||[]).length,6);assert.equal((svg.match(/C[0-9]/g)||[]).length,0);assert.equal((svg.match(/L[0-9]/g)||[]).length,0);
  const h=.0001;
  for(const k of [1/3,2/3])for(const side of [0,1]){
   const p=ahogeEdges(k)[side],a=ahogeEdges(k-h)[side],b=ahogeEdges(k-2*h)[side],c=ahogeEdges(k+h)[side],d=ahogeEdges(k+2*h)[side];
   assert.ok(Math.hypot((p.x-a.x)-(c.x-p.x),(p.y-a.y)-(c.y-p.y))/h<2);
-  const left={x:(p.x-2*a.x+b.x)/(h*h),y:(p.y-2*a.y+b.y)/(h*h)},right={x:(d.x-2*c.x+p.x)/(h*h),y:(d.y-2*c.y+p.y)/(h*h)};
-  assert.ok(Math.hypot(left.x-right.x,left.y-right.y)/Math.max(1,Math.hypot(left.x,left.y))<.005);
  }
 });
 test('boundary grabs retain their material coordinate across the width of the spline',()=>{
  const p=ahogeGeometry()[540],source={x:p[0],y:p[1]},target={x:source.x+14,y:source.y-12},pose=solveAhoge(source,target,{binding:p[4]});assert.equal(pose.saturated,false);near(deformAhoge(p[4],pose),target);
 });
 
-test('the moving outline stays closed at the tip and C2 continuous at its knots',()=>{
+test('the moving quadratic outline stays closed at the tip and tangent-continuous at its knots',()=>{
  const source=AHOGE_REST[60],h=.0001;
  for(const [dx,dy] of [[0,-500],[500,0],[-500,0],[0,500]]){
   const pose=solveAhoge(source,{x:source.x+dx,y:source.y+dy});near(deformAhoge({t:79,u:0},pose),deformAhoge({t:79,u:1},pose),1e-5);
   for(const side of [0,1])for(const k of [1/3,2/3]){
    const at=t=>deformAhoge({t:t*79,u:side},pose),p=at(k),a=at(k-h),b=at(k-2*h),c=at(k+h),d=at(k+2*h),l={x:(p.x-2*a.x+b.x)/(h*h),y:(p.y-2*a.y+b.y)/(h*h)},r={x:(d.x-2*c.x+p.x)/(h*h),y:(d.y-2*c.y+p.y)/(h*h)};
-   assert.ok(Math.hypot(l.x-r.x,l.y-r.y)/Math.max(1,Math.hypot(l.x,l.y))<.005);
+   assert.ok(Math.hypot((p.x-a.x)-(c.x-p.x),(p.y-a.y)-(c.y-p.y))/h<2);
   }
  }
 });
 
 test('side changes use root rotation through upright, never a collapsing mirror scale',async()=>{const {ahogeRestAngle}=await import('../src/ahoge.mjs');assert.equal(ahogeRestAngle(1,-1),-115);assert.equal(ahogeRestAngle(1,1),75);assert.equal(ahogeRestAngle(0,-1),0);for(let i=0;i<100;i++){const a=ahogeRestAngle(1,-1+i/50),b=ahogeRestAngle(1,-1+(i+1)/50);assert.ok(Math.abs(b-a)<2);}});
+
+test('SVG quadratic segments reproduce the same WebGL boundary between their endpoints',()=>{
+ const svg=ahogeSVG(),path=svg.match(/ d="([^"]+)"/)[1],tokens=path.match(/[MQZ]|-?\d+(?:\.\d+)?/g);let i=1,point={x:+tokens[i++],y:+tokens[i++]},segment=0;
+ while(tokens[i]==='Q'){i++;const control={x:+tokens[i++],y:+tokens[i++]},end={x:+tokens[i++],y:+tokens[i++]};for(const u of [.15,.4,.7,.9]){const v=1-u,p={x:v*v*point.x+2*v*u*control.x+u*u*end.x,y:v*v*point.y+2*v*u*control.y+u*u*end.y},side=segment<3?0:1,t=segment<3?(segment+u)/3:(6-segment-u)/3;near(p,ahogeEdges(t)[side],.0002);}point=end;segment++;}assert.equal(segment,6);
+});

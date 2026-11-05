@@ -321,9 +321,9 @@
       "name": "ahoge",
       "file": "assets/layers/ahoge.png",
       "box": [
-        1108,
-        104,
-        1547,
+        1098,
+        97,
+        1526,
         506
       ],
       "pivot": [
@@ -432,6 +432,6 @@
     "mouth": "Empty: approved expression has no drawn mouth.",
     "overlap": "12px at occluded attachment edges where geometrically possible; never outward over the silhouette.",
     "nativeResolution": "1254 source resampled with Lanczos onto 2048 fixed grid; not native 2048 generation.",
-    "ahoge": "Code-drawn cubic vector curl with a continuous width profile; fixed original root; matching SVG and PNG export."
+    "ahoge": "Code-drawn degree-two quadratic vector curl with tangent-continuous boundaries; fixed original root; matching SVG and PNG export."
   }
 }
