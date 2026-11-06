@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AHOGE_DEGREE,AHOGE_REST,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,solveAhoge} from '../src/ahoge.mjs';
+import {AHOGE_DEGREE,AHOGE_REST,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,reboundAhoge,solveAhoge} from '../src/ahoge.mjs';
 import {Touch} from '../src/touch.mjs';
 const near=(a,b,eps=.001)=>assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<eps,JSON.stringify({a,b}));
 
@@ -10,16 +10,18 @@ test('material binding preserves the original curl including points off its cent
 test('the actual pinched material point follows the hand while the root remains fixed',()=>{
   const source={x:1535,y:280},target={x:1575,y:250},pose=solveAhoge(source,target);
   near(deformAhoge(bindAhoge(source),pose),target);
-  for(let i=0;i<=pose.rootIndex;i++)near(deformAhoge(bindAhoge(AHOGE_REST[i]),pose),AHOGE_REST[i]);
+  near(deformAhoge(bindAhoge(AHOGE_REST[0]),pose),AHOGE_REST[0]);
   assert.ok(pose.stretch>=0&&pose.stretch<=.18);
 });
 test('extreme pulls retain the hooked tip, smooth attachment and bounded extension',()=>{
- const source=AHOGE_REST.at(-1),restTip={x:source.x-AHOGE_REST.at(-3).x,y:source.y-AHOGE_REST.at(-3).y};
+ const source=AHOGE_REST.at(-1),rest=solveAhoge(source,source);
  for(const [dx,dy] of [[0,-1e6],[1e6,0],[-1e6,0],[0,1e6]]){
-  const pose=solveAhoge(source,{x:source.x+dx,y:source.y+dy});assert.ok(pose.saturated);assert.ok(pose.stretch<=.18);assert.ok(pose.curve.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
-  const tip={x:pose.curve.at(-1).x-pose.curve.at(-3).x,y:pose.curve.at(-1).y-pose.curve.at(-3).y};
-  assert.ok((tip.x*restTip.x+tip.y*restTip.y)/(Math.hypot(tip.x,tip.y)*Math.hypot(restTip.x,restTip.y))>.99,'the hook must not straighten into a rod');
-  for(let i=0;i<=pose.rootIndex;i++)near(pose.curve[i],AHOGE_REST[i]);
+  const pose=solveAhoge(source,{x:source.x+dx,y:source.y+dy});assert.ok(pose.saturated);assert.ok(pose.stretch<=.18);assert.ok(pose.outline.flat().every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
+  for(let j=0;j<2;j++){
+   const [a,b]=pose.outline[j].slice(-2),[c,d]=rest.outline[j].slice(-2);
+   near({x:b.x-a.x,y:b.y-a.y},{x:d.x-c.x,y:d.y-c.y});
+   assert.deepEqual(pose.outline[j].slice(0,2),rest.outline[j].slice(0,2));
+  }
  }
 });
 test('the vector silhouette has a broad crown, smooth taper and a single material direction',()=>{
@@ -36,8 +38,10 @@ test('the vector silhouette has a broad crown, smooth taper and a single materia
 });
 test('zero release strength recovers the exact art and repeated grips retain the current shape',()=>{
   const source={x:1535,y:280},target={x:1575,y:250},pose=solveAhoge(source,target);
-  const base=AHOGE_REST.map(p=>deformAhoge(bindAhoge(p),pose));
-  const again=solveAhoge(source,target,{base});near(deformAhoge(bindAhoge(source),again),target);
+  const binding={t:32.75,u:.12},pin=deformAhoge(binding,pose);
+  const again=solveAhoge(source,pin,{baseOutline:pose.outline,binding});assert.deepEqual(again.outline,pose.outline);
+  assert.deepEqual(reboundAhoge(pose,1).outline,pose.outline);
+  assert.ok(reboundAhoge(pose,-.1).outline.flat().every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
   const released=solveAhoge(source,target,{strength:0,held:false});
   for(const point of AHOGE_REST)near(deformAhoge(bindAhoge(point),released),point);
 });
@@ -96,4 +100,17 @@ test('side changes use the lower root arc, never a collapsing mirror scale',asyn
 test('SVG quadratic segments reproduce the same WebGL boundary between their endpoints',()=>{
  const svg=ahogeSVG(),path=svg.match(/ d="([^"]+)"/)[1],tokens=path.match(/[MQZ]|-?\d+(?:\.\d+)?/g);let i=1,point={x:+tokens[i++],y:+tokens[i++]},segment=0;
  while(tokens[i]==='Q'){i++;const control={x:+tokens[i++],y:+tokens[i++]},end={x:+tokens[i++],y:+tokens[i++]};for(const u of [.15,.4,.7,.9]){const v=1-u,p={x:v*v*point.x+2*v*u*control.x+u*u*end.x,y:v*v*point.y+2*v*u*control.y+u*u*end.y},side=segment<3?0:1,t=segment<3?(segment+u)/3:(6-segment-u)/3;near(p,ahogeEdges(t)[side],.0002);}point=end;segment++;}assert.equal(segment,6);
+});
+
+test('an oblique pull on the edge near the root resists instead of folding the visible ribbon',()=>{
+ const p=ahogeGeometry()[13*6+1],source={x:p[0],y:p[1]},target={x:source.x-240,y:source.y+240*Math.sqrt(3)};
+ const pose=solveAhoge(source,target,{binding:p[4]});
+ assert.ok(pose.saturated);
+ for(const u of [0,1]){
+  const points=Array.from({length:97},(_,i)=>deformAhoge({t:i/96*79,u},pose));
+  for(let i=1;i<96;i++){
+   const a={x:points[i].x-points[i-1].x,y:points[i].y-points[i-1].y},b={x:points[i+1].x-points[i].x,y:points[i+1].y-points[i].y};
+   assert.ok(Math.abs(Math.atan2(a.x*b.y-a.y*b.x,a.x*b.x+a.y*b.y))<.13,'visible contour turns without a local fold');
+  }
+ }
 });

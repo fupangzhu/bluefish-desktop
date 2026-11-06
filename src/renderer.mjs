@@ -1,7 +1,7 @@
 import {deformFringe} from './fringe.mjs';
 import {eyeFrame,EYE_STYLE} from './eyes.mjs';
 import {deformEar} from './ears.mjs';
-import {AHOGE_REST,AHOGE_COLORS,ahogeRestAngle,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,solveAhoge} from './ahoge.mjs';
+import {AHOGE_REST,AHOGE_COLORS,ahogeRestAngle,ahogeBounds,ahogeGeometry,bindAhoge,deformAhoge,reboundAhoge,solveAhoge} from './ahoge.mjs';
 // Source-coordinate layered 2.5D rig. PNGs stay in a fixed 2048 grid.
 const VERT=`attribute vec2 pos;attribute vec2 uv;varying vec2 tex;void main(){tex=uv;gl_Position=vec4(pos,0.,1.);}`;
 const FRAG=`precision mediump float;varying vec2 tex;uniform sampler2D image;uniform float opacity;uniform float eyeOpen;uniform vec4 crop;uniform vec4 eye;uniform float aa;uniform vec4 lidShape;uniform vec2 lidMotion;uniform float irisGate;uniform float irisCorner;uniform vec2 eyeGaze;uniform float sideEye;uniform vec2 glanceShape;
@@ -152,8 +152,12 @@ export class Renderer{
     const begin=performance.now(),g=this.gl,c=this.canvas,dpr=Math.min(devicePixelRatio||1,2),size=Math.round(c.clientWidth*dpr);
     if(c.width!==size||c.height!==size)c.width=c.height=size;
     this.ahogePose=null;
-    if(s.ahogeGrab){
-      const grab=s.ahogeGrab,rect=c.getBoundingClientRect(),layer=this.byName.get('ahoge');
+    const grab=s.ahogeGrab;
+    if(!grab)this.lastAhogePull=null;
+    if(grab&&!grab.held&&this.lastAhogePull?.source===grab.source){
+      this.ahogePose=reboundAhoge(this.lastAhogePull.pose,grab.strength);
+    }else if(grab){
+      const rect=c.getBoundingClientRect(),layer=this.byName.get('ahoge');
       const aim={x:(grab.client.x-rect.left)/rect.width*2-1,y:1-(grab.client.y-rect.top)/rect.height*2};
       aim.x*=1+2*this.padding;aim.y*=1+2*this.padding;
       // Invert the current head projection, so looking around never slides the
@@ -165,7 +169,8 @@ export class Renderer{
         if(Math.abs(det)<1e-12)break;
         const ex=aim.x-p[0],ey=aim.y-p[1];x+=clamp((ex*by-ey*bx)/det,-4096,4096);y+=clamp((ey*ax-ex*ay)/det,-4096,4096);
       }
-      this.ahogePose=solveAhoge(grab.source,{x,y},{strength:grab.strength,held:grab.held,base:grab.base||AHOGE_REST,binding:grab.binding});
+      this.ahogePose=solveAhoge(grab.source,{x,y},{strength:grab.strength,held:grab.held,baseOutline:grab.baseOutline||undefined,binding:grab.binding});
+      if(grab.held)this.lastAhogePull={source:grab.source,pose:this.ahogePose};
     }
     g.viewport(0,0,c.width,c.height);g.clearColor(0,0,0,0);g.clear(g.COLOR_BUFFER_BIT);this.stats.drawCalls=0;this.stats.vertices=0;this.drawn=[];
     if(this.solo){const layer=this.byName.get(this.solo);if(layer)this.draw(layer,s,1,layer.name.endsWith('_open')?(layer.eyeSide==='l'?s.left:s.right):-1);}
@@ -203,7 +208,7 @@ export class Renderer{
         if(layer.alpha[ty*layer.texWidth+tx]>24){
           if(!['ahoge','ear_l','ear_r','hair_front'].includes(layer.name))return null;
           const [x0,y0,x1,y1]=layer.box;
-          return {part:layer.name,binding:layer.procedural?Object.fromEntries(['t','along','across','u'].map(k=>[k,a*layer.points[i/4][4][k]+b*layer.points[i/4+1][4][k]+c*layer.points[i/4+2][4][k]])):null,source:layer.procedural?{x:a*layer.points[i/4][0]+b*layer.points[i/4+1][0]+c*layer.points[i/4+2][0],y:a*layer.points[i/4][1]+b*layer.points[i/4+1][1]+c*layer.points[i/4+2][1]}:{x:x0+u*(x1-x0),y:y0+v*(y1-y0)},curve:layer.name==='ahoge'&&this.ahogePose?AHOGE_REST.map((p,i)=>deformAhoge({t:i,u:.5,along:0,across:0},this.ahogePose)):null};
+          return {part:layer.name,binding:layer.procedural?Object.fromEntries(['t','along','across','u'].map(k=>[k,a*layer.points[i/4][4][k]+b*layer.points[i/4+1][4][k]+c*layer.points[i/4+2][4][k]])):null,source:layer.procedural?{x:a*layer.points[i/4][0]+b*layer.points[i/4+1][0]+c*layer.points[i/4+2][0],y:a*layer.points[i/4][1]+b*layer.points[i/4+1][1]+c*layer.points[i/4+2][1]}:{x:x0+u*(x1-x0),y:y0+v*(y1-y0)},outline:layer.name==='ahoge'?this.ahogePose?.outline||null:null};
         }
       }
     }
