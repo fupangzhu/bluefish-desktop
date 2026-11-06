@@ -1,6 +1,6 @@
 {
   "name": "bluefish-desktop-complete",
-  "version": "0.6.10",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "main": "desktop/main.cjs",

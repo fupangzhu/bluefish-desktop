@@ -10,9 +10,9 @@ export function deformEar(x,y,layer,s){
  const side=layer.name==='ear_l'?-1:1,root=layer.pivot,dx=x-root[0],dy=y-root[1];
  const u=clamp(side*dx/((layer.box[2]-layer.box[0])*.55),0,1),weight=u*u*(3-2*u);
  const sleep=clamp((side<0?s.earSleepL:s.earSleepR)??s.sleep??0,0,1),mood=clamp((side<0?s.earMoodL:s.earMoodR)??s.earMood??0,-1,1),ear=side<0?s.earTwitchL:s.earTwitchR;
- const legacy=clamp((side<0?s.earFoldL:s.earFoldR)||0,0,1);
+ const legacy=clamp((side<0?s.earFoldL:s.earFoldR)||0,0,1),press=clamp((side<0?s.earPressL:s.earPressR)||0,0,1);
  let base=38*Math.max(0,-mood)-8*Math.max(0,mood)+16*sleep;
- if(!base&&!ear&&!legacy)return [x,y];
+ if(!base&&!ear&&!legacy&&!press)return [x,y];
  let a=rad(side*base*weight);
  let px=Math.cos(a)*dx-Math.sin(a)*dy,py=Math.sin(a)*dx+Math.cos(a)*dy+sleep*(layer.box[2]-layer.box[0])*.035*weight;
  const rootWave=ear?flick(ear.elapsed,ear):legacy;
@@ -24,5 +24,12 @@ export function deformEar(x,y,layer,s){
  const along=(xx*ex+yy*ey)*(1-.04*u*Math.max(0,tipWave)),cross=-xx*ey+yy*ex;
  const twist=rad(26*tipWave*u),bend=-side*(layer.box[2]-layer.box[0])*.055*tipWave*u*u;
  const narrow=cross*Math.cos(twist)+bend;
- return [root[0]+along*ex-narrow*ey,root[1]+along*ey+narrow*ex];
+ let fx=along*ex-narrow*ey,fy=along*ey+narrow*ex;
+ if(press){
+  // Leaning on a wall: the outer ear is pushed up against the head and squashed flat.
+  // Rotate inward about the root, compress its outward reach, and let it spread a little along the wall.
+  const k=press*weight,r=rad(-side*24*k),rx=Math.cos(r)*fx-Math.sin(r)*fy,ry=Math.sin(r)*fx+Math.cos(r)*fy;
+  fx=rx*(1-.42*k);fy=ry*(1+.12*k)-(layer.box[3]-layer.box[1])*.04*k;
+ }
+ return [root[0]+fx,root[1]+fy];
 }

@@ -11,6 +11,30 @@ body{display:grid;grid-template-rows:44px minmax(0,1fr);background:var(--paper);
 .stage{position:relative;display:grid;place-items:center;min-width:0;min-height:0;overflow:hidden;border-radius:var(--r-card);background:var(--stage);color:#fff;isolation:isolate}
 .stage.light{background:var(--stage-light);color:var(--ink)}
 .stage canvas{display:block;touch-action:none;cursor:default}
+/* Editor stand-ins for the desktop in the duck / tow / wall previews: a Windows-style taskbar
+   (generic icons), the monitor bezel below it and beyond the screen edge. */
+.preview-taskbar{position:absolute;left:0;right:0;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;pointer-events:none;overflow:hidden;
+  background:#202020eb;border-top:1px solid #ffffff14;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);--icon:calc(var(--bar)*.5)}
+.preview-taskbar .tb-apps{grid-column:2;display:flex;gap:calc(var(--bar)*.16);align-items:center}
+.preview-taskbar i{display:block;width:var(--icon);height:var(--icon);border-radius:calc(var(--icon)*.22);background:#ffffff26}
+.preview-taskbar .tb-apps i:nth-child(3){background:#e8a33d}
+.preview-taskbar .tb-apps i:nth-child(4){background:#3f8ee8}
+.preview-taskbar .tb-apps i:nth-child(5){background:#5bb974}
+.preview-taskbar .tb-apps i:nth-child(6){background:#9a7be0}
+.preview-taskbar .tb-start{background:linear-gradient(135deg,#4cc2ff,#0067c0)!important}
+.preview-taskbar .tb-search{width:calc(var(--bar)*2.4)!important;border-radius:calc(var(--bar))!important;background:#ffffff1f!important}
+.preview-taskbar .tb-tray{grid-column:3;justify-self:end;margin:0 calc(var(--bar)*.25) 0 calc(var(--bar)*.2);display:flex;align-items:center;gap:calc(var(--bar)*.18)}
+.preview-taskbar .tb-tray i{width:calc(var(--icon)*.55);height:calc(var(--icon)*.55);border-radius:50%;background:#ffffff40}
+.preview-taskbar time{white-space:pre;text-align:right;font:calc(var(--bar)*.22)/1.35 system-ui,sans-serif;color:#ffffffde}
+.stage.light .preview-taskbar{background:#f3f3f3eb;border-top-color:#0000000f}
+.stage.light .preview-taskbar i{background:#0000001a}
+.stage.light .preview-taskbar .tb-search{background:#0000000d!important}
+.stage.light .preview-taskbar .tb-tray i{background:#00000033}
+.stage.light .preview-taskbar time{color:#000000d9}
+.preview-bezel{position:absolute;left:0;right:0;bottom:0;pointer-events:none;background:#0b0c0f}
+.preview-edge{top:0}
+.preview-edge[data-side=right]{box-shadow:inset 1px 0 0 #ffffff1a,-6px 0 14px #00000059}
+.preview-edge[data-side=left]{box-shadow:inset -1px 0 0 #ffffff1a,6px 0 14px #00000059}
 .stage .master-compare{position:absolute;inset:0;margin:auto;pointer-events:none;transform:scale(.88)}
 .status{position:absolute;left:8px;bottom:8px;display:grid;place-items:center;width:28px;height:28px}
 .stage-btn{position:absolute;right:8px;bottom:8px;color:inherit}

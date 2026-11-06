@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Touch,TouchInput} from '../src/touch.mjs';
 import {Motion} from '../src/motion.mjs';
+import {DIP} from '../src/tow.mjs';
 
 const advance=(touch,seconds,reduced=false)=>{let state;for(let i=0;i<Math.ceil(seconds*120);i++)state=touch.step(1/120,reduced);return state;};
 
@@ -79,19 +80,20 @@ test('only deliberate nearby head double taps roll for a bonk',()=>{
  assert.equal(input.end(),false);assert.equal(draws,0);
  assert.equal(tap(),false);t.step(.1);tap(point,'ear_l',false);const earDraws=draws;
  assert.equal(tap(),false);for(let i=0;i<5;i++)t.step(.1);assert.equal(tap(),false);assert.equal(draws,earDraws);
- t.step(.1);assert.equal(tap(),true);assert.equal(draws,earDraws+1);
- assert.equal(tap(),false);assert.equal(draws,earDraws+1);
+ t.step(.1);assert.equal(tap(),true);assert.equal(draws,earDraws+2); // the roll, then the shared duck picks its hold length
+ assert.equal(tap(),false);assert.equal(draws,earDraws+2);
  const miss=new Touch(()=>.9), i=new TouchInput(miss);
  for(let n=0;n<4;n++){i.begin('hair_front',point,240,null,{head:true});assert.equal(i.end(),false);miss.step(.1);}
  assert.equal(miss.bonking,false);
 });
 
-test('a tug sustains the guarding pose; a bonk covers first then hides and returns',()=>{
+test('a tug sustains the guarding pose; a bonk covers first, then ducks (never fading) and returns',()=>{
  const t=new Touch(()=>.9), advance=n=>{let s;for(let i=0;i<n;i++)s=t.step(.01,false,false);return s;};
  t.startPull({x:100,y:100});assert.equal(advance(10).guard,0);
- t.movePull({x:126,y:53},240);let s=advance(32);assert.ok(s.guard>.95&&s.pain>.9&&s.duck===0);
+ t.movePull({x:126,y:53},240);let s=advance(32);assert.ok(s.guard>.95&&s.pain>.9&&s.dip===0);
  t.endPull();s=advance(85);assert.equal(s.guard,0);assert.equal(s.pain,0);
- t.startBonk();s=advance(18);assert.ok(s.guard>.95&&s.pain>.9&&s.duck===0);
- s=advance(44);assert.equal(s.duck,1);s=advance(260);assert.equal(s.duck,1);assert.equal(s.guard,0);
- s=advance(100);assert.equal(s.duck,0);assert.equal(t.bonking,false);
+ t.startBonk();s=advance(18);assert.ok(s.guard>.95&&s.pain>.9&&s.dip<.01);
+ s=advance(100);assert.ok(s.dip>DIP.depth*.8&&s.dipKind===1,'the shared duck after the cover');
+ s=advance(150);assert.ok(s.dip>DIP.depth*.4);assert.equal(s.guard,0);
+ s=advance(300);assert.equal(s.dip,0);assert.equal(t.bonking,false);
 });

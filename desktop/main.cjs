@@ -171,6 +171,12 @@ app.whenReady().then(async()=>{
     if(on===true){drag=createDrag(screen.getCursorScreenPoint(),lastSet||win.getBounds(),{lockY:state.docked});win.setIgnoreMouseEvents(false);}
     else endDrag();
   });
+  // Ahoge tow: the renderer simulates the elastic follow and asks for a docked window x.
+  ipcMain.on('tow',(e,x)=>{
+    if(!petOwned(e)||drag||!state.docked||typeof x!=='number'||!Number.isFinite(x)||!lastSet)return;
+    const d=screen.getDisplayMatching(lastSet),L=dock.layout(state.size,true),b=dock.dockedBounds(d.workArea,d.bounds,state.size,x+L.width/2);
+    if(b.x!==lastSet.x||b.y!==lastSet.y)applyBounds(b);
+  });
   ipcMain.on('menu',e=>{if(petOwned(e))showMenuAt(screen.getCursorScreenPoint());});
   ipcMain.on('zoom',(e,steps)=>{
     if(!petOwned(e)||typeof steps!=='number'||!Number.isFinite(steps))return;
@@ -222,8 +228,13 @@ app.whenReady().then(async()=>{
     if(!alive(win))return;
     const p=screen.getCursorScreenPoint();
     if(drag)dragStep(p);
-    const r=win.getContentBounds(),area=screen.getDisplayMatching(r).workArea;
-    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,sx:p.x,sy:p.y,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
+    const r=win.getContentBounds(),display=screen.getDisplayMatching(r),area=display.workArea;
+    let track=null,wall={side:0,gap:0};
+    if(state.docked&&lastSet){
+      const others=screen.getAllDisplays().filter(d=>d.id!==display.id).map(d=>d.bounds);
+      track={x:lastSet.x,...dock.dockRange(area,display.bounds,state.size)};wall=dock.wallInfo(lastSet,display.bounds,state.size,others);
+    }
+    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,sx:p.x,sy:p.y,win:track,wall,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
   },33);
   // Keep the docked pet above the taskbar, which also sits in the topmost band.
   topTimer=setInterval(()=>{

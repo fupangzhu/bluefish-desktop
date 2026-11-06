@@ -1,10 +1,10 @@
-import {Preview} from './preview.mjs';
+import {Preview,TOW_GRIP} from './preview.mjs';
 import {headContact} from './attention.mjs';
 import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {hydrate,icons} from './icons.mjs';
 import {TouchInput} from './touch.mjs';
-import {drawHeadHands,headGestureHands,makeSkin,sampleSkin} from './hands.mjs';
+import {drawHands,drawHeadHands,headGestureHands,makeSkin,sampleSkin} from './hands.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const ctl=null;
@@ -16,17 +16,65 @@ const local={size:460,docked:true,follow:true,idle:true,reduced:motion.reduced,p
 let renderer=null,rig=null,skin=makeSkin();
 const gestureCanvas=document.createElement('canvas');gestureCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';stage.append(gestureCanvas);
 const gestureCtx=gestureCanvas.getContext('2d');
+// Duck, tow and wall previews stage the pet like the desktop: a Windows-style taskbar at the cut line
+// (her hands rest on its top edge), the monitor bezel below it and, for the wall slump, beyond the screen edge.
+const LEDGE_PREVIEWS=new Set(['bonk','dip','tow','slump_l','slump_r']),CUT=(1+(.73-.5)*1.76)/2;   // overlay CUT_ART_Y inside the head box
+const REACH={'-1':.37,'1':.4};   // desktop/dock.cjs REACH: outermost point of the tilted head per side (x size)
+const TASKBAR=.2;                // taskbar height (x size): 48 px under a 240 px pet
+const taskbar=document.createElement('div'),bezel=document.createElement('div'),edge=document.createElement('div');
+taskbar.className='preview-taskbar';bezel.className='preview-bezel';edge.className='preview-bezel preview-edge';
+taskbar.innerHTML='<div class="tb-apps"><i class="tb-start"></i><i class="tb-search"></i><i></i><i></i><i></i><i></i></div><div class="tb-tray"><i></i><i></i><time></time></div>';
+taskbar.hidden=bezel.hidden=edge.hidden=true;canvas.after(taskbar,bezel,edge);
+const clock=taskbar.querySelector('time');let clockText='';
 function drawGesture(){
- const cur=motion.current,duck=cur?.duck||0;
- canvas.style.translate=duck?'0 '+duck*canvas.clientWidth*.80+'px':'';
- canvas.style.opacity=1-duck;
+ const cur=motion.current,size=canvas.clientWidth,slump=cur?.slump||0,side=cur?.slumpSide||0,H=canvas.clientHeight;
+ // Same offsets as the docked desktop overlay: the duck sinks, the wall slump slides toward the edge and down,
+ // and the tow preview carries the head along like the native window would.
+ const tow=preview.active?preview.stageShift()*size/240:0,lean=side*slump*.13*size,dx=lean+tow,dy=((cur?.dip||0)+.05*slump)*size;
+ canvas.style.translate=dx||dy?dx+'px '+dy+'px':'';
+ const showLedge=preview.active&&LEDGE_PREVIEWS.has(preview.name),cutY=canvas.offsetTop+CUT*H,barH=Math.round(TASKBAR*size);
+ taskbar.hidden=bezel.hidden=!showLedge;
+ if(showLedge){
+  taskbar.style.top=cutY+'px';taskbar.style.height=barH+'px';taskbar.style.setProperty('--bar',barH+'px');bezel.style.top=cutY+barH+'px';
+  const now=new Date(),text=now.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})+'\n'+now.toLocaleDateString('zh-CN');
+  if(text!==clockText){clockText=text;clock.textContent=text;}
+ }
+ canvas.style.clipPath=showLedge?'inset(0 0 '+Math.max(0,H-(CUT*H-dy))+'px 0)':'';
+ // Wall: the screen ends .07 of the head beyond her tilted reach; the .13 slide presses .06 into it like the desktop.
+ const wallSide=preview.active&&preview.name.startsWith('slump_')?(preview.name.endsWith('_l')?-1:1):0;
+ edge.hidden=!wallSide;
+ // The taskbar spans the screen, so it ends at that edge too (tray clock in the corner).
+ taskbar.style.left=taskbar.style.right='0';
+ if(wallSide){
+  const x=canvas.offsetLeft+size/2+wallSide*(REACH[wallSide]+.07)*size,beyond=stage.clientWidth-x;
+  edge.style.left=wallSide>0?x+'px':'0';edge.style.right=wallSide>0?'0':'auto';edge.style.width=wallSide>0?'auto':x+'px';edge.dataset.side=wallSide>0?'right':'left';
+  if(wallSide>0)taskbar.style.right=beyond+'px';else taskbar.style.left=x+'px';
+ }
  const rect=stage.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),g=gestureCtx;
  const w=Math.round(rect.width*dpr),h=Math.round(rect.height*dpr);if(gestureCanvas.width!==w||gestureCanvas.height!==h){gestureCanvas.width=w;gestureCanvas.height=h;}
  g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,w,h);
- if(!cur||(!cur.guard&&!cur.rubEyes)||!renderer||renderer.solo)return;
- const r=canvas.getBoundingClientRect();
- const hands=headGestureHands(renderer,cur,{left:r.left-rect.left,top:r.top-rect.top,width:r.width,height:r.height});
- g.setTransform(dpr,0,0,dpr,0,0);drawHeadHands(g,hands,skin,1-duck);
+ if(!cur||!renderer||renderer.solo)return;
+ const r=canvas.getBoundingClientRect(),box={left:r.left-rect.left,top:r.top-rect.top,width:r.width,height:r.height};
+ g.setTransform(dpr,0,0,dpr,0,0);
+ const gestures=cur.guard||cur.rubEyes?headGestureHands(renderer,cur,box,{sink:showLedge?dy:0}):[];
+ g.save();
+ if(showLedge){
+  g.beginPath();g.rect(0,0,rect.width,cutY+barH*.5);g.clip();
+  // Ledge hands as on the desktop; the wall-side hand slides along with the lean.
+  const alphaByHand=[1,1];for(const hand of gestures)alphaByHand[hand.i]*=1-hand.alpha;
+  const hands=[0,1].map(i=>({x:lean?lean*(i===(lean<0?0:1)?.75:.4):0}));
+  drawHands(g,{cx:canvas.offsetLeft+size/2+tow,ledgeY:cutY,s:size,hands,skin,alphaByHand});
+  g.beginPath();g.rect(0,0,rect.width,cutY);g.clip();
+ }
+ if(gestures.length)drawHeadHands(g,gestures,skin);
+ g.restore();
+ // The tow preview's virtual pointer, drawn where it holds the ahoge.
+ const p=preview.pointer(),layer=renderer.byName.get('ahoge');
+ if(p&&layer){
+  const o=renderer.project(TOW_GRIP.x,TOW_GRIP.y,cur,layer,true),k=r.width/240;
+  const x=box.left+(o[0]+1)/2*r.width+p.x*k,y=box.top+(1-o[1])/2*r.height+p.y*k;
+  g.beginPath();g.arc(x,y,Math.max(5,7*k*.6),0,Math.PI*2);g.fillStyle='rgba(255,255,255,.85)';g.fill();g.lineWidth=2;g.strokeStyle='rgba(20,30,60,.75)';g.stroke();
+ }
 }
 
 /* Status is a single dot; the text lives in the tooltip. */

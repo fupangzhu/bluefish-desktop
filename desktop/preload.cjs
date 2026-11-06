@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('pet',{
   onState:callback=>{ipcRenderer.on('state',(_e,state)=>callback(state));},
   setInteractive:hit=>ipcRenderer.send('interactive',hit===true),
   drag:on=>ipcRenderer.send('drag',on===true),
+  tow:x=>ipcRenderer.send('tow',typeof x==='number'&&Number.isFinite(x)?x:null),
   menu:()=>ipcRenderer.send('menu'),
   zoom:steps=>ipcRenderer.send('zoom',Number(steps))
 });

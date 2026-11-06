@@ -68,3 +68,18 @@ test('free docking uses the visible body bottom, ignoring the transparent pull m
  const b=dock.freeBounds(work,240,{x:500,y:900});assert.equal(dock.shouldDock(b,work,240),true);
  const higher=dock.freeBounds(work,240,{x:500,y:880});assert.equal(dock.shouldDock(higher,work,240),false);
 });
+
+test('docked range spans the display and walls are detected only at open screen edges',()=>{
+  const display={x:0,y:0,width:1920,height:1080},area={x:0,y:0,width:1920,height:1040},w=dock.layout(240,true).width;
+  const range=dock.dockRange(area,display,240);
+  assert.deepEqual(range,{min:dock.dockedBounds(area,display,240,-1e9).x,max:dock.dockedBounds(area,display,240,1e9).x});
+  const at=x=>dock.wallInfo({x,y:0,width:w,height:10},display,240);
+  assert.deepEqual(at(range.min),{side:-1,gap:Math.round(240*(.65-dock.REACH.left))});
+  assert.deepEqual(at(range.max),{side:1,gap:Math.round(240*(.65-dock.REACH.right))});
+  assert.equal(at(range.min+25).side,-1);
+  assert.equal(at(range.min+50).side,0);
+  assert.equal(at(800).side,0);
+  // A second monitor on the left turns that edge into a passage, not a wall.
+  assert.equal(dock.wallInfo({x:range.min,y:0,width:w,height:10},display,240,[{x:-1920,y:0,width:1920,height:1080}]).side,0);
+  assert.equal(dock.wallInfo({x:range.max,y:0,width:w,height:10},display,240,[{x:-1920,y:0,width:1920,height:1080}]).side,1);
+});

@@ -10,10 +10,11 @@ const preload=path.join(OUT,'preload.cjs');
 fs.writeFileSync(preload,`const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('pet',{
  onState:cb=>ipcRenderer.on('test-state',(_e,s)=>cb(s)),onPointer:cb=>ipcRenderer.on('test-pointer',(_e,p)=>cb(p)),onAction:()=>{},
- setInteractive:hit=>ipcRenderer.send('test-interactive',hit),drag:on=>ipcRenderer.send('test-drag',on),menu:()=>{},zoom:()=>{}
+ setInteractive:hit=>ipcRenderer.send('test-interactive',hit),drag:on=>ipcRenderer.send('test-drag',on),tow:x=>ipcRenderer.send('test-tow',x),menu:()=>{},zoom:()=>{}
 });`);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-let win,server,dragEvents=[],errors=[];
+let win,server,dragEvents=[],towEvents=[],errors=[];
+ipcMain.on('test-tow',(_e,x)=>towEvents.push(x));
 ipcMain.on('test-drag',(_e,on)=>dragEvents.push(on));
 app.whenReady().then(async()=>{
   const evidence={};
@@ -60,7 +61,49 @@ app.whenReady().then(async()=>{
     for(const size of [150,240,460])for(const docked of [true,false]){
       await configure(size,docked);
       const points={};for(const name of ['ahoge','ear_l','ear_r']){points[name]=await target(name);assert.ok(points[name],`${name} selectable at ${size}, docked=${docked}`);}
-      dragEvents=[];const p=points.ahoge;await press(p);
+      dragEvents=[];towEvents=[];
+      // Docked: pinch the far end of the curl, where a person grabs it to lead her along.
+      const p=docked?await js(`(()=>{const b=window.bluefish,r=b.renderer,l=r.byName.get('ahoge'),pos=b.position(),s=b.state.size;let best=null,score=Infinity;
+        for(let i=0;i<l.points.length;i+=3){const a=l.points[i],v=l.points[i+1],c=l.points[i+2],sx=(a[0]+v[0]+c[0])/3,sy=(a[1]+v[1]+c[1])/3;
+          const q=r.project(sx,sy,b.motion.current,l),x=Math.round(pos.left+(q[0]+1)*s/2),y=Math.round(pos.top+(1-q[1])*s/2);
+          const d=Math.hypot(sx-1540,sy-285);if(d<score&&x>2&&y>2&&x<innerWidth-2&&b.partAt(x,y)==='ahoge'){score=d;best={x,y};}}
+        return best;})()`):points.ahoge;
+      assert.ok(p,'ahoge grip at '+size);await press(p);
+      if(docked){
+        // Docked: a sideways tug past the threshold leads the pet along the taskbar, with no angry face or guard.
+        const start=await js('({...bluefish.motion.touch.tow.start})'),screenOf=q=>({sx:start.x+q.x-p.x,sy:start.y+q.y-p.y});
+        // Pull until the strand of the pinched point is almost at its engage length: it bends and
+        // straightens, but the head stays put until the strand is taut.
+        const rope=await js('({length:bluefish.motion.touch.tow.length,root:{...bluefish.motion.touch.tow.root}})');
+        const reachX=ratio=>Math.sqrt(Math.max(0,(ratio*rope.length)**2-rope.root.y**2))-rope.root.x;
+        const small={x:p.x+Math.max(1,Math.floor(reachX(.97))),y:p.y};wc.send('test-pointer',{...small,...screenOf(small),gx:0,gy:0});await sleep(300);
+        assert.equal(await js('bluefish.motion.touch.tow.engaged'),false,'pulling and straightening never move the head');
+        assert.ok(['straighten','taut'].includes(await js('bluefish.renderer.ahogePose?.phase')),'the strand is straightening before she moves');
+        // The head trails one taut strand length behind the pointer.
+        const lead={x:p.x+Math.round(size*.5),y:p.y};wc.send('test-pointer',{...lead,...screenOf(lead),gx:0,gy:0});
+        for(let frame=0;frame<40;frame++){if(await js('bluefish.motion.touch.tow.offset>'+size*.2))break;await sleep(50);}
+        const towed=await js('({offset:bluefish.motion.touch.tow.offset,towing:bluefish.motion.current.towing,pain:bluefish.motion.current.pain,guard:bluefish.motion.current.guard,part:bluefish.touchInput.active?.part})');
+        assert.ok(towed.towing===1&&towed.offset>size*.2,'head follows the tug: '+JSON.stringify(towed));
+        assert.ok(towed.pain<.08&&towed.guard===0,'no angry face while being towed');
+        assert.ok(towEvents.length>2&&towEvents.at(-1)>towEvents[0],'window asked to move right: '+towEvents.slice(-3));
+        assert.deepEqual(dragEvents,[],'the tow never uses the body drag');
+        if(size===460)await shot('tow-docked');
+        await release(lead);
+        let dip=0;for(let frame=0;frame<30&&dip<.05;frame++){dip=await js('bluefish.motion.current.dip');await sleep(50);}
+        assert.ok(dip>.05,'release after moving always dips');
+        if(size===460)await shot('dip-docked');
+        // Longest duck: .42s in + 2.3s hold + .85s rise.
+        let dipEnd=1;for(let frame=0;frame<60&&dipEnd!==0;frame++){await sleep(100);dipEnd=await js('bluefish.motion.current.dip');}
+        assert.equal(dipEnd,0,'the dip ends by itself');
+        // Lifting too high slips out of the fingers.
+        await press(p);const start2=await js('({...bluefish.motion.touch.tow.start})');
+        const up={x:p.x,y:p.y-Math.round(size*.25)};wc.send('test-pointer',{...up,sx:start2.x,sy:start2.y-Math.round(size*.25),gx:0,gy:0});
+        let slipped=false;for(let frame=0;frame<30&&!slipped;frame++){slipped=await js('bluefish.motion.touch.anchor===null&&!!bluefish.motion.touch.grab?.slip');await sleep(50);}
+        assert.ok(slipped,'lifting the ahoge too high slips it');
+        await release(p);await sleep(1000);
+        evidence.sizes.push({size,docked,points,towed,dip,towEvents:towEvents.length});
+        continue;
+      }
       // The global pointer stream keeps the grab alive even beyond the painted silhouette.
       const tug={x:p.x+Math.round(size*.06),y:p.y-Math.round(size*.16)};
       wc.send('test-pointer',{...tug,gx:0,gy:0});
@@ -138,12 +181,12 @@ app.whenReady().then(async()=>{
     await press(scalp);await release(scalp);assert.equal(await js('bluefish.motion.touch.bonking'),true);
     const until=async (code,ms)=>{const end=Date.now()+ms;while(Date.now()<end){if(await js(code))return;await sleep(30);}assert.fail(code);};
     await until('bluefish.motion.current.guard>.8',900);await shot('bonk-guard');
-    await until('bluefish.motion.current.duck===1',1400);
-    assert.equal(await js(`bluefish.hitTest(${scalp.x},${scalp.y})`),false);
-    const clear=await js('(()=>{const c=document.querySelector("#hands"),a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return !a.some((v,i)=>i%4===3&&v>24);})()');
-    assert.ok(clear,'hands also disappear');await shot('bonk-hidden');
-    await sleep(1000);assert.equal(await js('bluefish.motion.current.duck'),1);
-    await until('!bluefish.motion.touch.bonking',5500);assert.equal(await js('bluefish.motion.current.duck'),0);await shot('bonk-back');
+    await until('bluefish.motion.current.dip>.25',1400);
+    // The shared duck sinks behind the ledge but never fades: the hands stay on the taskbar edge.
+    const handsLeft=await js('(()=>{const c=document.querySelector("#hands"),a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return a.some((v,i)=>i%4===3&&v>24);})()');
+    assert.ok(handsLeft,'hands stay visible');assert.equal(await js('getComputedStyle(document.querySelector("#avatar")).opacity'),'1');await shot('bonk-hidden');
+    await sleep(600);assert.ok(await js('bluefish.motion.current.dip>.1'));
+    await until('!bluefish.motion.touch.bonking',6500);assert.equal(await js('bluefish.motion.current.dip'),0);await shot('bonk-back');
     evidence.bonk=true;
     await configure(460,false);
     // Exact-source alpha: the transparent inside of the loop is never a grab target.

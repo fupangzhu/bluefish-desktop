@@ -29,6 +29,8 @@
     "src/peek.mjs",
     "src/sleep.mjs",
     "src/touch.mjs",
+    "src/tow.mjs",
+    "src/slump.mjs",
     "src/wake.mjs",
     "src/renderer.mjs",
     "src/reluctance.mjs"

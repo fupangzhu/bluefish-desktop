@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AHOGE_DEGREE,AHOGE_REST,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,reboundAhoge,solveAhoge} from '../src/ahoge.mjs';
+import {AHOGE_DEGREE,AHOGE_REST,AHOGE_ROOT,TAUT,ahogeReach,ahogeGeometry,ahogeWidth,ahogeSVG,ahogeEdges,bindAhoge,deformAhoge,reboundAhoge,solveAhoge} from '../src/ahoge.mjs';
 import {Touch} from '../src/touch.mjs';
 const near=(a,b,eps=.001)=>assert.ok(Math.hypot(a.x-b.x,a.y-b.y)<eps,JSON.stringify({a,b}));
 
@@ -13,16 +13,26 @@ test('the actual pinched material point follows the hand while the root remains 
   near(deformAhoge(bindAhoge(AHOGE_REST[0]),pose),AHOGE_REST[0]);
   assert.ok(pose.stretch>=0&&pose.stretch<=.18);
 });
-test('extreme pulls retain the hooked tip, smooth attachment and bounded extension',()=>{
+test('extreme pulls straighten the strand toward the pointer, root fixed and length bounded',()=>{
  const source=AHOGE_REST.at(-1),rest=solveAhoge(source,source);
+ assert.equal(rest.taut,0);assert.equal(rest.phase,'bend');
  for(const [dx,dy] of [[0,-1e6],[1e6,0],[-1e6,0],[0,1e6]]){
-  const pose=solveAhoge(source,{x:source.x+dx,y:source.y+dy});assert.ok(pose.saturated);assert.ok(pose.stretch<=.18);assert.ok(pose.outline.flat().every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
-  for(let j=0;j<2;j++){
-   const [a,b]=pose.outline[j].slice(-2),[c,d]=rest.outline[j].slice(-2);
-   near({x:b.x-a.x,y:b.y-a.y},{x:d.x-c.x,y:d.y-c.y});
-   assert.deepEqual(pose.outline[j].slice(0,2),rest.outline[j].slice(0,2));
-  }
+  const pose=solveAhoge(source,{x:source.x+dx,y:source.y+dy});assert.ok(pose.saturated);assert.equal(pose.phase,'resist');assert.equal(pose.taut,1);
+  assert.ok(pose.stretch<=TAUT.max-1+1e-9);assert.ok(pose.outline.flat().every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));
+  // A straight line from the fixed root: the tip points at the pull.
+  const mid=j=>({x:(pose.outline[0][j].x+pose.outline[1][j].x)/2,y:(pose.outline[0][j].y+pose.outline[1][j].y)/2}),root=mid(0),tip=mid(4),dir=Math.hypot(dx,dy);
+  near(root,AHOGE_ROOT,1);assert.ok(((tip.x-root.x)*dx+(tip.y-root.y)*dy)/dir/Math.hypot(tip.x-root.x,tip.y-root.y)>.99);
  }
+});
+test('pulling away from the root bends, then straightens, then holds a taut strand under the pointer',()=>{
+ const source={x:1535,y:280},binding=bindAhoge(source),reach=ahogeReach(binding),phases=[];
+ for(let k=0;k<=.42;k+=.02){
+  const target={x:source.x+k*1000,y:source.y},pose=solveAhoge(source,target,{binding});phases.push(pose.phase);
+  if(pose.phase==='taut'){const pin=deformAhoge(binding,pose);assert.ok(Math.hypot(pin.x-target.x,pin.y-target.y)<1,'the pinch stays under the pointer');}
+ }
+ assert.ok(reach.arc>Math.hypot(reach.x,reach.y),'the curl is longer than its chord');
+ const order=['bend','straighten','taut','resist'],seen=[...new Set(phases)];
+ assert.deepEqual(seen,order,'phases in order: '+phases.join(','));
 });
 test('the vector silhouette has a broad crown, smooth taper and a single material direction',()=>{
  assert.ok(ahogeWidth(.4)>25);assert.ok(ahogeWidth(.9)>8);assert.equal(ahogeWidth(1),0);assert.ok(ahogeSVG().includes('<path fill="url(#blue)"'));
@@ -112,5 +122,23 @@ test('an oblique pull on the edge near the root resists instead of folding the v
    const a={x:points[i].x-points[i-1].x,y:points[i].y-points[i-1].y},b={x:points[i+1].x-points[i].x,y:points[i+1].y-points[i].y};
    assert.ok(Math.abs(Math.atan2(a.x*b.y-a.y*b.x,a.x*b.x+a.y*b.y))<.13,'visible contour turns without a local fold');
   }
+ }
+});
+test('a slipped, fully straightened strand springs back to its curl without snapping or coiling into a spiral',()=>{
+ const source={x:1535,y:280},binding=bindAhoge(source),curl=outline=>{
+  const P=Array.from({length:81},(_,i)=>deformAhoge({t:i*(AHOGE_REST.length-1)/80,u:.5},{outline}));let total=0;
+  for(let i=2;i<P.length;i++){const a={x:P[i-1].x-P[i-2].x,y:P[i-1].y-P[i-2].y},c={x:P[i].x-P[i-1].x,y:P[i].y-P[i-1].y};total+=Math.atan2(a.x*c.y-a.y*c.x,a.x*c.x+a.y*c.y);}
+  return total*180/Math.PI;
+ };
+ const rest=curl(solveAhoge(source,source,{binding}).outline);
+ for(const target of [{x:source.x-150,y:source.y-700},{x:source.x+700,y:source.y},{x:source.x+300,y:source.y-600}]){
+  const straight=solveAhoge(source,target,{binding});
+  assert.equal(straight.taut,1);assert.ok(Math.abs(curl(straight.outline))<5);
+  let last=-Infinity;
+  for(let f=1;f>=-.6;f-=.05){const pose=reboundAhoge(straight,f),turn=curl(pose.outline);
+   assert.ok(turn<=rest+10,'never coils past its curl: '+f.toFixed(2)+' -> '+turn.toFixed(1));
+   if(f>=0){assert.ok(turn>=last-1,'recurls steadily, no snap or loop: '+f.toFixed(2));last=turn;}
+   assert.ok(pose.outline.flat().every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)));}
+  near(deformAhoge(binding,reboundAhoge(straight,0)),source);
  }
 });

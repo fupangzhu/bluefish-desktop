@@ -3,6 +3,7 @@ import {Wake} from './wake.mjs';
 import {Touch} from './touch.mjs';
 import {Attention} from './attention.mjs';
 import {Eyelids} from './eyelids.mjs';
+import {Slump} from './slump.mjs';
 // Original control implementation; inspired by the damped motion described by GrokBot.
 export const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 export const YAW_LEFT=8;   // max turn to screen-left (deg); right stays 18
@@ -43,19 +44,24 @@ export function fromPromptSoulSegment(segment,duration=3){
   });
 }
 export class Motion {
-  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.wake=new Wake(random);this.attention=new Attention(random,now=>this.wake.request(now));this.eyelids=new Eyelids(random);this.doze=new Doze(random);this.lastWakeId=0;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears','wag','side'].map(k=>[k,new Spring(k==='side'?1:0,k==='side'?3:k==='hair'?6:k==='droop'?5:k==='ears'?5.5:k==='wag'?8:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.wakePending=false;this.wakeReadyAt=null;this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
+  constructor(random=Math.random){this.random=random;this.touch=new Touch(random);this.wake=new Wake(random);this.attention=new Attention(random,now=>this.wake.request(now));this.eyelids=new Eyelids(random);this.doze=new Doze(random);this.slump=new Slump(random);this.wall={side:0,gap:0};this.lastWakeId=0;this.gaze={x:0,y:0};this.pose={yaw:0,pitch:0,roll:0};this.springs=Object.fromEntries(['yaw','pitch','roll','gx','gy','hair','droop','ears','wag','side'].map(k=>[k,new Spring(k==='side'?1:0,k==='side'?3:k==='hair'?6:k==='droop'?5:k==='ears'?5.5:k==='wag'?8:11)]));this.time=0;this.nextBlink=3+random()*3;this.blinkAt=-100;this.gestureAt=-100;this.gestureName='';this.queue=[];this.wakePending=false;this.wakeReadyAt=null;this.follow=true;this.idle=true;this.reduced=false;this.override=null;}
   setGaze(x,y){if(Number.isFinite(x)&&Number.isFinite(y))this.gaze={x:clamp(x,-1,1),y:clamp(y,-1,1)};}
   blink(){this.blinkAt=this.time;this.eyelids.blink(this.time);}
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}
   playCue(cue,delay=0){const c=validateCue(cue);if(!Number.isFinite(delay)||delay<0||delay>30)throw Error('无效延迟');this.queue=this.queue.filter(q=>q.end>this.time);if(this.queue.length>=24)throw Error('动作队列已满');this.queue.push({...c,start:this.time+delay,end:this.time+delay+c.duration});}
-  reset(){this.queue=[];this.touch.reset();this.attention.reset();this.wakePending=false;this.wakeReadyAt=null;this.eyelids.reset();this.wake.reset();this.doze.reset();this.lastWakeId=0;this.springs.ears.value=0;this.springs.ears.velocity=0;this.springs.wag.value=0;this.springs.wag.velocity=0;this.springs.side.value=1;this.springs.side.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
-  blocksTravel(attention=this.attention.current){return this.touch.bonking||!!attention.reluctant?.active||!!attention.sleeping||this.wake.active||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
+  reset(){this.queue=[];this.touch.reset();this.attention.reset();this.wakePending=false;this.wakeReadyAt=null;this.eyelids.reset();this.wake.reset();this.doze.reset();this.slump.reset();this.lastWakeId=0;this.springs.ears.value=0;this.springs.ears.velocity=0;this.springs.wag.value=0;this.springs.wag.velocity=0;this.springs.side.value=1;this.springs.side.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
+  blocksTravel(attention=this.attention.current){return this.touch.bonking||this.touch.dip.active||this.slump.active||!!attention.reluctant?.active||!!attention.sleeping||this.wake.active||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
   step(dt){
     this.time+=clamp(dt,0,0.1);const t=this.time,attention=this.attention.current,sleep=attention.sleep||0,touch=this.touch.step(dt,this.reduced,this.idle&&!attention.sleeping&&sleep<.1);
     if(this.idle&&!this.reduced&&!attention.sleeping&&sleep<.1&&t>=this.nextBlink){this.blink();this.nextBlink=t+3.2+this.random()*4;}
     const dream=this.doze.step(dt,{sleeping:this.idle&&!!attention.sleeping&&sleep>.7,reduced:this.reduced,now:this.attention.idleTime});
     if(dream.ear&&this.wake.preset!=='peek'){const side=dream.ear.side;touch[side==='l'?'earTwitchL':'earTwitchR']=dream.ear;touch[side==='l'?'earFoldL':'earFoldR']=0;}
     const pet=(attention.rub||0)*(1-sleep);
+    // Zoning out against a wall only happens while awake, idle animation is on and nothing else is playing.
+    const towBusy=!!this.touch.anchor||this.touch.tow.busy;
+    const slumpState=this.slump.step(dt,{wall:this.wall?.side||0,enabled:this.idle&&!this.reduced&&!attention.sleeping&&sleep<.05&&!this.wake.active&&!attention.reluctant?.active&&!attention.rubbing,busy:towBusy||this.touch.fringe.held||!!touch.bonk||touch.dip>0||!!touch.dipMix}),sm=slumpState.slump,side=slumpState.slumpSide;
+    const dm=touch.dipMix||0;   // the duck's expression
+
     const lids=this.eyelids.sample(t,attention);
     if(attention.wakeId!==this.lastWakeId){this.lastWakeId=attention.wakeId;if(!this.wake.active||this.wake.preset==='peek')this.wake.start('gentle');}
     if((touch.bonk&&this.wake.active)||(touch.guard>.12&&this.wake.preset==='rubeyes'))this.wake.finish();
@@ -73,8 +79,16 @@ export class Motion {
     }
     const waking=this.wakePending&&!attention.sleeping&&!(attention.rubbing&&attention.reaction==='sleepy');
     const reluctant=attention.reluctant||{active:false,mix:0,shiftX:0},rm=reluctant.mix,ov=reluctant.active?null:this.override,ovGaze=ov&&ov.gx!==undefined,gx=ovGaze?clamp(ov.gx||0,-1,1):this.follow?this.gaze.x*(this.attention.time>0?attention.gazeWeight:1):0,gy=ovGaze?clamp(ov.gy||0,-1,1):this.follow?this.gaze.y*(this.attention.time>0?attention.gazeWeight:1):0;   // an override without gx (e.g. only droop) keeps normal gaze
-    const lookX=gx*(1-rm)+(reluctant.gx||0)*rm,lookY=gy*(1-rm);
+    let lookX=gx*(1-rm)+(reluctant.gx||0)*rm,lookY=gy*(1-rm);
+    // Shallow duck: glance away from the pointer that dragged her, a little downward. Slump: blank stare ahead and down.
+    lookX=lookX*(1-dm)-(touch.dipDir||0)*.55*dm;   // dipDir is 0 for a bonk: she just looks down
+    lookY=lookY*(1-dm)+.3*dm;
+    lookX*=1-sm;lookY=lookY*(1-sm)+.4*sm;
     const target={yaw:this.pose.yaw+gx*14,pitch:this.pose.pitch-gy*8-touch.pain*3,roll:this.pose.roll+gx*2.5+touch.ahogePullX*15};
+    // Being towed by the ahoge tips the head toward the pull; the duck tucks the chin; the slump rests the head on the wall.
+    target.roll+=(touch.towLean||0)*7;target.yaw+=(touch.towLean||0)*4;
+    target.pitch+=4*(touch.dipMix||0);target.yaw-=(touch.dipDir||0)*5*dm;
+    target.yaw*=1-.8*sm;target.roll=target.roll*(1-sm)+side*9*sm;target.pitch+=3*sm;
     if(rm){target.yaw=target.yaw*(1-rm)+this.pose.yaw*rm+reluctant.yaw;target.roll=target.roll*(1-rm)+this.pose.roll*rm+reluctant.roll;}
     if(ov){target.yaw+=ov.yaw||0;target.roll+=ov.roll||0;}
     if(this.idle&&!this.reduced){target.pitch+=Math.sin(t*1.35)*0.65*(1-pet);target.roll+=Math.sin(t*0.65)*0.45*(1-pet);}
@@ -88,8 +102,8 @@ export class Motion {
     if(this.gestureName==='happy')target.roll+=Math.sin(gt*8)*5*env;
     if(this.reduced){this.springs.wag.value=0;this.springs.wag.velocity=0;}
     const petWag=this.reduced?0:this.springs.wag.step(waking?0:attention.ahogeWag||0,dt);
-    const wag=this.reduced?0:petWag+wakePose.wag+dream.wag*sleep+(this.gestureName==='happy'&&env>0?(Math.sin(gt*16)*14+Math.sin(gt*9+1)*3)*env:0);   // ahoge wag with a little bounce
-    const droopTarget=Math.max(ov?clamp(ov.droop||0,0,1):0,attention.droop||0,sleep,rm*.65)*(1-pet),droopSpring=this.springs.droop;droopSpring.frequency=droopTarget>droopSpring.value?5:9.5;   // wilt ~1s, perk up ~0.5s
+    const wag=this.reduced?0:petWag+wakePose.wag+dream.wag*sleep+(touch.ahogeSway||0)+(this.gestureName==='happy'&&env>0?(Math.sin(gt*16)*14+Math.sin(gt*9+1)*3)*env:0);   // ahoge wag with a little bounce
+    const droopTarget=Math.max(ov?clamp(ov.droop||0,0,1):0,attention.droop||0,sleep,rm*.65,.9*sm,.45*(touch.dipMix||0))*(1-pet),droopSpring=this.springs.droop;droopSpring.frequency=droopTarget>droopSpring.value?5:9.5;   // wilt ~1s, perk up ~0.5s
     const excited=this.gestureName==='happy'?env:0,earTarget=excited*(1-droopTarget)-droopTarget+wakePose.ears;
     this.springs.ears.frequency=earTarget<this.springs.ears.value?5.5:8.5;
     const p={ParamAngleX:target.yaw,ParamAngleY:target.pitch,ParamAngleZ:target.roll,ParamEyeLOpen:lids.left,ParamEyeROpen:lids.right,ParamEyeBallX:lookX+wakePose.gx,ParamEyeBallY:lookY};
@@ -107,7 +121,10 @@ export class Motion {
     if(Number.isFinite(wakePose.eyeCap)){p.ParamEyeLOpen=p.ParamEyeROpen=wakePose.eyeCap;}
     if(this.gestureName==='wink'&&gt>=0&&gt<.6)p.ParamEyeLOpen*=Math.abs(Math.cos(gt/.6*Math.PI));
     if(peeking){p.ParamEyeLOpen=wakePose.peekEye||0;p.ParamEyeROpen=0;}
-    if(touch.duck){p.ParamEyeLOpen*=1-touch.duck;p.ParamEyeROpen*=1-touch.duck;}
-    return this.current={reluctant:!!reluctant.active,sideEye:rm,shiftX:(reluctant.shiftX||0)+touch.ahogePullX*.6,shiftY:touch.ahogePullY*.48,yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeSide:ease('side',dream.side??this.springs.side.value),ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),earMoodL:peeking?-1+1.45*(wakePose.peekEar||0):undefined,earSleepL:peeking?1-(wakePose.peekEar||0):undefined,sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubHand:wakePose.rubHand??0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018):0,...touch};
+    // A bonk squeezes the eyes shut while hidden.
+    if(touch.dipKind){const shut=1-(touch.dipMix||0);p.ParamEyeLOpen*=shut;p.ParamEyeROpen*=shut;}
+    const lidCap=1-.45*dm*(touch.dipKind?0:1)-.58*sm-.35*(touch.towWince||0);
+    if(lidCap<1){p.ParamEyeLOpen=Math.min(p.ParamEyeLOpen,lidCap);p.ParamEyeROpen=Math.min(p.ParamEyeROpen,lidCap);}
+    return this.current={reluctant:!!reluctant.active,sideEye:rm,shiftX:(reluctant.shiftX||0)+touch.ahogePullX*.6,shiftY:touch.ahogePullY*.48,yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeSide:ease('side',dream.side??this.springs.side.value),ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),earMoodL:peeking?-1+1.45*(wakePose.peekEar||0):undefined,earSleepL:peeking?1-(wakePose.peekEar||0):undefined,sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubHand:wakePose.rubHand??0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018+sm*Math.sin(t*1.05)*.0025):0,slump:sm,slumpSide:side,earPressL:side<0?sm:0,earPressR:side>0?sm:0,...touch};
   }
 }

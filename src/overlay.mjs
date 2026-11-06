@@ -38,7 +38,11 @@ let skin=makeSkin();
 let pointer=null,pointerAt=-1e9,pokeFlag=false,wakeFlag=false,paused=false,lastHit=null,renderer=null,rig=null;
 let lastPose={yaw:0,pitch:0,roll:0},lastMainFollow;
 let activePointer=null;
+let track=null,wall={side:0,gap:0},towOrigin=null,towSent=null;   // docked window range / nearby screen edge from main
 const touchInput=new TouchInput(motion.touch,on=>pet?.drag(on));
+// Head shift toward the wall while slumping: close the gap and press a little further, so the
+// squashed wall-side ear stays flat against the screen edge.
+const slumpShift=()=>clamp(wall.gap+.06*L.s,0,.5*L.s);
 
 function layout(){
   const W=innerWidth,H=innerHeight,s=state.size,docked=state.docked,grip=docked?Math.round(s*GRIP_RATIO):0,dpr=Math.min(devicePixelRatio||1,2);
@@ -58,9 +62,10 @@ function place(out){
   const sleep=motion.current?.sleep||0,rubLift=(motion.current?.rubLift||0)*s;
   if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob+s*.085*sleep-rubLift;}
   else{pos.left=(W-s)/2;pos.top=(H-s)/2+s*.025*sleep-rubLift;}
-  const duck=motion.current?.duck||0;
-  pos.top+=s*.80*duck;
-  canvas.style.opacity=docked?1:1-duck;
+  const dip=motion.current?.dip||0,slump=motion.current?.slump||0,side=motion.current?.slumpSide||0;
+  // Docked she ducks behind the taskbar edge; floating there is no edge, so only a small crouch.
+  if(docked){pos.top+=s*dip+s*.05*slump;if(slump&&side===wall.side)pos.left+=side*slumpShift()*slump;}
+  else pos.top+=s*dip*.3;
   canvas.style.transform=`translate(${pos.left-VIEW_PAD*s}px,${pos.top-VIEW_PAD*s}px)`;
 }
 function drawFrame(cur,out){
@@ -68,16 +73,18 @@ function drawFrame(cur,out){
   place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
   renderer.render(pose);
   const g=handsCtx;g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,handsCanvas.width,handsCanvas.height);
-  const gestures=pose.guard>.001||pose.rubEyes>.001?headGestureHands(renderer,pose,canvas.getBoundingClientRect()):[];
-  const visibility=1-(pose.duck||0);
+  const sink=L.docked?((pose.dip||0)+.05*(pose.slump||0))*L.s:0;
+  const gestures=pose.guard>.001||pose.rubEyes>.001?headGestureHands(renderer,pose,canvas.getBoundingClientRect(),{sink}):[];
   g.setTransform(L.dpr,0,0,L.dpr,0,0);
   if(L.docked){
-    const alphaByHand=[visibility,visibility];
+    const alphaByHand=[1,1];
     for(const hand of gestures)alphaByHand[hand.i]*=1-hand.alpha;
-    drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands:out.hands,skin,alphaByHand});
+    const lean=(pose.slump||0)*(pose.slumpSide===wall.side?pose.slumpSide*slumpShift():0);
+    const hands=lean?out.hands.map((h,i)=>({...h,x:(h.x||0)+lean*(i===(lean<0?0:1)?.75:.4)})):out.hands;
+    drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands,skin,alphaByHand});
     g.save();g.beginPath();g.rect(0,0,L.W,L.ledgeY);g.clip();
     drawHeadHands(g,gestures,skin);g.restore();
-  }else drawHeadHands(g,gestures,skin,visibility);
+  }else drawHeadHands(g,gestures,skin);
 }
 function handsAlpha(x,y){
   if(!L.docked)return 0;
@@ -87,7 +94,7 @@ function handsAlpha(x,y){
 }
 function hitTest(x,y){
   if(handsAlpha(x,y)>24)return true;
-  if(!renderer||(!L.docked&&motion.current?.duck>.85))return false;
+  if(!renderer)return false;
   if(L.docked&&y>=L.ledgeY)return false;
   return renderer.hitTest(x-pos.left+VIEW_PAD*L.s,y-pos.top+VIEW_PAD*L.s);
 }
@@ -112,7 +119,9 @@ function applyState(next){
 }
 
 // ---- input ------------------------------------------------------------------------------------------
-function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
+function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){
+  track=p.win||null;wall=p.wall&&L.docked?{side:Math.sign(p.wall.side)||0,gap:+p.wall.gap||0}:{side:0,gap:0};motion.wall=wall;
+  if(track&&towOrigin!==null)motion.touch.tow.setLimits(track.min-towOrigin,track.max-towOrigin);touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
 const eventPoint=e=>({x:e.clientX,y:e.clientY,sx:e.screenX,sy:e.screenY});
 function onDown(e){
   if(e.button!==0||activePointer!==null||motion.touch.bonking||!hitTest(e.clientX,e.clientY))return;
@@ -122,7 +131,12 @@ function onDown(e){
   const part=partAt(e.clientX,e.clientY);
   const grip=part==='ahoge'||part==='hair_front'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
   const head=!handsAlpha(e.clientX,e.clientY)&&(part==='hair_front'||(!part&&headContact(e.clientX-pos.left,e.clientY-pos.top,L.s)));
-  touchInput.begin(part,eventPoint(e),L.s,grip,{head});
+  motion.slump.poke();
+  // Docked: a sideways tug on the ahoge leads her along the taskbar (needs the main process to move the window).
+  const tow=!!pet&&L.docked&&part==='ahoge',point=eventPoint(e);
+  if(tow){towOrigin=point.sx-point.x;towSent=null;}
+  touchInput.begin(part,point,L.s,grip,{head,tow});
+  if(tow&&track)motion.touch.tow.setLimits(track.min-towOrigin,track.max-towOrigin);
   if(!part)motion.blink();pokeFlag=true;
   lastHit=true;pet?.setInteractive(true);
   document.documentElement.style.cursor=part==='ahoge'||part==='hair_front'?'grabbing':'';
@@ -131,7 +145,9 @@ function endDrag(e){
   if(e?.pointerId!==undefined&&activePointer!==null&&e.pointerId!==activePointer)return;
   // Include the release coordinates in case the final movement preceded a pointer tick.
   if(e?.type==='pointerup')touchInput.move(eventPoint(e));
-  touchInput.end(e?.type!=='pointerup');activePointer=null;lastHit=null;
+  const moved=touchInput.active?.part==='body'&&touchInput.active.moved;
+  touchInput.end(e?.type!=='pointerup');
+  if(moved)motion.slump.arrive();activePointer=null;lastHit=null;
   document.documentElement.style.cursor='';
 }
 for(const el of [canvas,handsCanvas]){
@@ -165,6 +181,12 @@ function frame(now){
     motion.override=follow?out.override:null;
     if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active&&!motion.touch.bonking&&!attention.reluctant?.active)motion.gesture(out.gesture);
     const cur=motion.step(dt);
+    if(cur.towEnd&&cur.towEnd.traveled>0)motion.slump.arrive(motion.touch.dip.remaining);
+    const tow=motion.touch.tow;
+    if(towOrigin!==null){
+      if(tow.busy){const x=Math.round(towOrigin+tow.offset);if(x!==towSent){towSent=x;pet?.tow?.(x);}}
+      else{towOrigin=null;towSent=null;}
+    }
     drawFrame(cur,out);
     bluefish.last=out;
   }

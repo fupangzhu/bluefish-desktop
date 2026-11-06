@@ -102,19 +102,92 @@ function lastSafe(candidate,max){
  }
  return {outline:best,stretch,fraction:low};
 }
+// Released, the strand springs back to its rest curl. strength runs 1 -> 0 with a decaying
+// oscillation; below 0 it swings past rest (the curl tightens). That overshoot is capped at a
+// fixed distance: an extrapolation proportional to a long pull (e.g. a fully straightened
+// strand) would coil the curl into a spiral.
+const OVERSHOOT=35;   // art px, largest control displacement past rest (the curl tightens a few degrees)
+// Blend two outlines by turning each control around the fixed root (angle and distance) instead of
+// moving it in a straight line: between a straight strand and the curl, straight-line blends pass
+// through a loop; turning about the root uncurls and recurls the strand without one. Each control's
+// half-width vector turns with it. f=0 gives a, f=1 gives b; f<0 extrapolates past a.
+const angleOf=v=>Math.atan2(v.y,v.x),turnVec=(v,a)=>({x:v.x*Math.cos(a)-v.y*Math.sin(a),y:v.x*Math.sin(a)+v.y*Math.cos(a)});
+function curlBlend(a,b,f){
+ const ca=a[0].map((p,i)=>lerp(p,a[1][i],.5)),cb=b[0].map((p,i)=>lerp(p,b[1][i],.5));
+ const centre=[],half=[];
+ for(let i=0;i<ca.length;i++){
+  const va=sub(ca[i],AHOGE_ROOT),vb=sub(cb[i],AHOGE_ROOT),ra=len(va),rb=len(vb);
+  let d=ra>1e-6&&rb>1e-6?angleOf(vb)-angleOf(va):0;d=Math.atan2(Math.sin(d),Math.cos(d));
+  const r=mix(ra,rb,f),ang=ra>1e-6?angleOf(va)+d*f:angleOf(vb);
+  centre.push(r>1e-6?{x:AHOGE_ROOT.x+Math.cos(ang)*r,y:AHOGE_ROOT.y+Math.sin(ang)*r}:lerp(ca[i],cb[i],f));
+  const ha=turnVec(sub(a[1][i],ca[i]),d*f),hb=turnVec(sub(b[1][i],cb[i]),-d*(1-f));
+  half.push({x:ha.x*(1-f)+hb.x*f,y:ha.y*(1-f)+hb.y*f});
+ }
+ return [centre.map((p,i)=>sub(p,half[i])),centre.map((p,i)=>({x:p.x+half[i].x,y:p.y+half[i].y}))];
+}
 export function reboundAhoge(pose,strength){
  const blend=f=>EDGES.map((edge,j)=>edge.map((p,i)=>lerp(p,pose.outline[j][i],f)));
- const outline=blend(strength),stretch=outlineStretch(outline);
+ let f=strength;
+ if(f<0){const reach=Math.max(...pose.outline.flatMap((edge,j)=>edge.map((p,i)=>distance(p,EDGES[j][i]))));if(reach*-f>OVERSHOOT)f=-OVERSHOOT/reach;}
+ // A straightened strand recurls about its root, never snapping even where the strict curl checks object.
+ if(pose.taut>=.5){const outline=curlBlend(EDGES,pose.outline,f);return {...pose,outline,stretch:outlineStretch(outline)??Math.max(0,f)*(pose.stretch||0)};}
+ const outline=blend(f),stretch=outlineStretch(outline);
  if(stretch!==null)return {...pose,outline,stretch};
- const safe=lastSafe(f=>blend(f*strength),1);
+ const safe=lastSafe(g=>blend(g*f),1);
  return {...pose,outline:safe.outline,stretch:safe.stretch};
+}
+// Pulling a pinched point away from the root runs through three phases, measured against the
+// strand length from the root to that point along the rest curl (its "reach"):
+//   bend      below TAUT.from: the curl only bends under the pointer;
+//   straighten TAUT.from..TAUT.to: the curl straightens into a line toward the pointer;
+//   taut      beyond TAUT.to: a straight, slightly elastic strand, up to TAUT.max of its length.
+// A docked tow starts moving the head at TAUT.engage (src/tow.mjs uses the same numbers).
+export const TAUT={from:.7,to:1,engage:1.04,max:1.1};
+const smoothstep=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
+// Rest arc length along the centre line, tabulated by spline parameter.
+const ARC=(()=>{const n=960,out=[0];let total=0,prev=spline(CONTROL,0);for(let i=1;i<=n;i++){const p=spline(CONTROL,i/n);total+=distance(prev,p);prev=p;out.push(total);}return out;})();
+const arcAt=u=>{const x=clamp(u,0,1)*(ARC.length-1),i=Math.min(ARC.length-2,Math.floor(x));return mix(ARC[i],ARC[i+1],x-i);};
+// Collinear controls whose spline reproduces the rest arc-length distribution, so a straightened
+// strand keeps every material point at its own distance from the root (least squares, c0 = 0).
+const STRAIGHT=(()=>{
+ const m=4,A=Array.from({length:m},()=>Array(m+1).fill(0));
+ for(let j=0;j<=96;j++){const u=j/96,b=basis(u).slice(1),y=arcAt(u);for(let r=0;r<m;r++){for(let c=0;c<m;c++)A[r][c]+=b[r]*b[c];A[r][m]+=b[r]*y;}}
+ for(let i=0;i<m;i++){let p=i;for(let r=i+1;r<m;r++)if(Math.abs(A[r][i])>Math.abs(A[p][i]))p=r;[A[i],A[p]]=[A[p],A[i]];for(let r=0;r<m;r++)if(r!==i){const f=A[r][i]/A[i][i];for(let c=i;c<=m;c++)A[r][c]-=f*A[i][c];}}
+ return [0,...A.map((row,i)=>row[m]/row[i])];
+})();
+function straightOutline(dir,scale){
+ const n={x:-dir.y,y:dir.x};
+ return [-1,1].map(side=>STRAIGHT.map((c,i)=>({x:AHOGE_ROOT.x+dir.x*c*scale+n.x*RADII[i]*side,y:AHOGE_ROOT.y+dir.y*c*scale+n.y*RADII[i]*side})));
+}
+// Rest vector from the root to a material point, and the strand length to it.
+export function ahogeReach(binding){
+ const t=clamp(binding.t/LAST,0,1),p=deformAhoge(binding,{outline:EDGES});
+ return {x:p.x-AHOGE_ROOT.x,y:p.y-AHOGE_ROOT.y,arc:arcAt(t)};
 }
 export function solveAhoge(source,target,{strength=1,baseOutline=EDGES,binding=null}={}){
  const grip=binding||bindAhoge(source),t=clamp(grip.t/LAST,0,1),start=deformAhoge(grip,{outline:baseOutline}),delta=sub(target,start),d=len(delta);
  const leverage=basis(t).reduce((sum,w,i)=>sum+w*INFLUENCE[i],0);
  const cap=d>1e-8?Math.min(1,restLength*.65*leverage/d):0;
  const result=cap>0?lastSafe(f=>moveOutline(baseOutline,delta.x*f/leverage,delta.y*f/leverage),cap):{outline:baseOutline,stretch:outlineStretch(baseOutline)??0,fraction:0};
- const saturated=d>1e-8&&result.fraction<.999,pose={outline:result.outline,stretch:result.stretch,saturated,phase:saturated?'resist':'bend'};
+ const saturated=d>1e-8&&result.fraction<.999;
+ let pose={outline:result.outline,stretch:result.stretch,saturated,phase:saturated?'resist':'bend',taut:0};
+ // Straightening is measured from where the grab began, so re-pinching a pulled strand keeps its shape.
+ const arc=Math.max(arcAt(t),1e-6),away=sub(target,AHOGE_ROOT),reach=len(away),ratio=reach/arc;
+ const from=Math.max(TAUT.from,len(sub(start,AHOGE_ROOT))/arc),taut=smoothstep((ratio-from)/Math.max(.05,TAUT.to-from));
+ if(taut>0&&reach>1e-6){
+  // The pinch may sit off the centre line: turn and size the line until that point is under the pointer.
+  let dir={x:away.x/reach,y:away.y/reach},scale=Math.min(ratio,TAUT.max),straight=straightOutline(dir,scale);
+  for(let k=0;k<3;k++){
+   const g=sub(deformAhoge(grip,{outline:straight}),AHOGE_ROOT),gl=len(g)||1,a=Math.atan2(cross(g,away),dot(g,away)),c=Math.cos(a),s=Math.sin(a);
+   dir={x:dir.x*c-dir.y*s,y:dir.x*s+dir.y*c};scale=Math.min(scale*reach/gl,TAUT.max);straight=straightOutline(dir,scale);
+  }
+  let outline=taut>=1?straight:curlBlend(pose.outline,straight,taut);
+  // Mid-way the bent pose may already resist, so the blend can drift off the pointer: nudge the free
+  // controls (root fixed) until the pinch is back under it.
+  const over=ratio>TAUT.max;
+  if(!over&&taut<1&&leverage>1e-6)for(let k=0;k<4;k++){const e=sub(target,deformAhoge(grip,{outline}));if(len(e)<.05)break;outline=moveOutline(outline,e.x/leverage,e.y/leverage);}
+  pose={outline,stretch:Math.max(0,scale-1),saturated:over,phase:over?'resist':taut>=1?'taut':'straighten',taut};
+ }
  return strength===1?pose:reboundAhoge(pose,strength);
 }
 export function ahogeGeometry(segments=256){

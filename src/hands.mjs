@@ -53,7 +53,8 @@ export function drawHands(ctx,{cx,ledgeY,s,hands,skin,onlyHand=null,alphaByHand=
   [-1,1].forEach((side,i)=>{if(onlyHand!==null&&i!==onlyHand)return;const alpha=alphaByHand[i];if(alpha<=0)return;const h=hands[i]||{};ctx.save();ctx.globalAlpha*=alpha;drawHand(ctx,{x:cx+side*.21*s+(h.x||0),y:ledgeY,w,lift:h.lift||0,squash:h.squash||0,skin,side,tap:h.tap||0,tapSquash:h.tapSquash||0,squeeze:h.squeeze||0,contact:h.contact||0});ctx.restore();});
 }
 // Gesture centers live in the head's coordinate system, even when the native window undocks.
-export function headGestureHands(renderer,pose,rect){
+// sink: px the head is lowered behind the ledge; the hands still start from (and return to) the ledge.
+export function headGestureHands(renderer,pose,rect,{sink=0}={}){
   const guard=pose.guard||0,rub=pose.rubEyes||0,amount=guard||rub;
   if(amount<=.001)return [];
   const size=rect.width/(1+2*renderer.padding),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
@@ -65,7 +66,7 @@ export function headGestureHands(renderer,pose,rect){
     const phase=(pose.rubPhase||0)+i*.5;
     const tx=cx+q[0]*size/2+(guard?0:Math.sin(phase)*size*.006);
     const ty=cy-q[1]*size/2+(guard?0:Math.cos(phase)*size*.004);
-    const u=amount*amount*(3-2*amount),originX=cx+side*.21*size,originY=cy+.195*size;
+    const u=amount*amount*(3-2*amount),originX=cx+side*.21*size,originY=cy+.195*size-sink;
     return [{i,side,x:originX+(tx-originX)*u,y:originY+(ty-originY)*u,w:HAND_WIDTH*size,
       lift:size*.09*amount,contact:amount*.7,alpha:clamp(amount/.22,0,1),centered:true}];
   });
