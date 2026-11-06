@@ -69,3 +69,29 @@ test('body drag still works and reset clears every reaction even with idle/follo
   for(let i=0;i<12;i++)m.step(1/60);assert.ok(m.current.pain>.99);
   m.reset();const state=m.step(1/60);for(const key of ['pain','ahogePullX','ahogePullY','earFoldL','earFoldR'])assert.equal(state[key],0);
 });
+test('only deliberate nearby head double taps roll for a bonk',()=>{
+ const t=new Touch(()=>.9), input=new TouchInput(t), point={x:100,y:80,sx:500,sy:400};let draws=0;
+ t.random=()=>{draws++;return .1;};
+ const tap=(p=point,part=null,head=true)=>{input.begin(part,p,240,null,{head});return input.end();};
+ assert.equal(tap(),false);t.step(.1);
+ input.begin(null,point,240,null,{head:true});
+ input.move({...point,sx:540}); // a pickup can move the window and keep local x unchanged
+ assert.equal(input.end(),false);assert.equal(draws,0);
+ assert.equal(tap(),false);t.step(.1);tap(point,'ear_l',false);const earDraws=draws;
+ assert.equal(tap(),false);for(let i=0;i<5;i++)t.step(.1);assert.equal(tap(),false);assert.equal(draws,earDraws);
+ t.step(.1);assert.equal(tap(),true);assert.equal(draws,earDraws+1);
+ assert.equal(tap(),false);assert.equal(draws,earDraws+1);
+ const miss=new Touch(()=>.9), i=new TouchInput(miss);
+ for(let n=0;n<4;n++){i.begin('hair_front',point,240,null,{head:true});assert.equal(i.end(),false);miss.step(.1);}
+ assert.equal(miss.bonking,false);
+});
+
+test('a tug sustains the guarding pose; a bonk covers first then hides and returns',()=>{
+ const t=new Touch(()=>.9), advance=n=>{let s;for(let i=0;i<n;i++)s=t.step(.01,false,false);return s;};
+ t.startPull({x:100,y:100});assert.equal(advance(10).guard,0);
+ t.movePull({x:126,y:53},240);let s=advance(32);assert.ok(s.guard>.95&&s.pain>.9&&s.duck===0);
+ t.endPull();s=advance(85);assert.equal(s.guard,0);assert.equal(s.pain,0);
+ t.startBonk();s=advance(18);assert.ok(s.guard>.95&&s.pain>.9&&s.duck===0);
+ s=advance(44);assert.equal(s.duck,1);s=advance(260);assert.equal(s.duck,1);assert.equal(s.guard,0);
+ s=advance(100);assert.equal(s.duck,0);assert.equal(t.bonking,false);
+});

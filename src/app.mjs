@@ -4,7 +4,7 @@ import {Motion,fromPromptSoulSegment} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {hydrate,icons} from './icons.mjs';
 import {TouchInput} from './touch.mjs';
-import {drawHands,eyeRubHands,makeSkin,sampleSkin} from './hands.mjs';
+import {drawHeadHands,headGestureHands,makeSkin,sampleSkin} from './hands.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const ctl=null;
@@ -17,13 +17,16 @@ let renderer=null,rig=null,skin=makeSkin();
 const gestureCanvas=document.createElement('canvas');gestureCanvas.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';stage.append(gestureCanvas);
 const gestureCtx=gestureCanvas.getContext('2d');
 function drawGesture(){
- const rect=stage.getBoundingClientRect(),r=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),g=gestureCtx;
+ const cur=motion.current,duck=cur?.duck||0;
+ canvas.style.translate=duck?'0 '+duck*canvas.clientWidth*.80+'px':'';
+ canvas.style.opacity=1-duck;
+ const rect=stage.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),g=gestureCtx;
  const w=Math.round(rect.width*dpr),h=Math.round(rect.height*dpr);if(gestureCanvas.width!==w||gestureCanvas.height!==h){gestureCanvas.width=w;gestureCanvas.height=h;}
- g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,w,h);const cur=motion.current;if(!cur?.rubEyes||!renderer||renderer.solo)return;
- const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),l=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],cur,l);return {x:r.left-rect.left+(q[0]+1)*r.width/2,y:r.top-rect.top+(1-q[1])*r.height/2};});
- const cx=r.left-rect.left+r.width/2,ledgeY=r.bottom-rect.top;
- g.setTransform(dpr,0,0,dpr,0,0);g.globalAlpha=cur.rubEyes;
- drawHands(g,{cx,ledgeY,s:r.width,skin,onlyHand:cur.rubHand,hands:eyeRubHands([],{eyes,cx,ledgeY,size:r.width,mix:cur.rubEyes,phase:cur.rubPhase,hand:cur.rubHand})});g.globalAlpha=1;
+ g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,w,h);
+ if(!cur||(!cur.guard&&!cur.rubEyes)||!renderer||renderer.solo)return;
+ const r=canvas.getBoundingClientRect();
+ const hands=headGestureHands(renderer,cur,{left:r.left-rect.left,top:r.top-rect.top,width:r.width,height:r.height});
+ g.setTransform(dpr,0,0,dpr,0,0);drawHeadHands(g,hands,skin,1-duck);
 }
 
 /* Status is a single dot; the text lives in the tooltip. */
@@ -115,13 +118,14 @@ const touchInput=new TouchInput(motion.touch);
 let touchPointer=null;
 const canvasPoint=e=>{const r=canvas.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top};};
 canvas.addEventListener('pointerdown',e=>{
-  if(e.button!==0||touchPointer!==null||!renderer)return;
+  if(e.button!==0||touchPointer!==null||!renderer||motion.touch.bonking)return;
   const p=canvasPoint(e);if(!renderer.hitTest(p.x,p.y))return;
   if(preview.active){preview.release();apply(local);}
   touchPointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
-  if(motion.attention.current.sleeping){wakeFlag=true;return;}
+  if(motion.attention.current.sleeping){motion.touch.headTap=null;wakeFlag=true;return;}
   const hit=renderer.pickHit(p.x,p.y),part=hit?.part;
-  touchInput.begin(part,{x:e.clientX,y:e.clientY},canvas.clientWidth,hit);
+  const head=part==='hair_front'||(!part&&headContact(p.x,p.y,canvas.clientWidth));
+  touchInput.begin(part,{x:e.clientX,y:e.clientY},canvas.clientWidth,hit,{head});
   if(!part)motion.blink();canvas.style.cursor=part==='ahoge'||part==='hair_front'?'grabbing':'';
 });
 canvas.addEventListener('pointermove',e=>{if(e.pointerId===touchPointer)touchInput.move({x:e.clientX,y:e.clientY});});
@@ -174,7 +178,7 @@ try{
   let last=performance.now();
   function draw(now){if(!paused){const dt=Math.min(.1,(now-last)/1000),r=canvas.getBoundingClientRect(),p=attentionPointer;
     const x=p?p.x-r.left:NaN,y=p?p.y-r.top:NaN;
-    if(preview.active){preview.step(dt);}else{motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,follow:motion.follow,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:!!touchInput.active});
+    if(preview.active){preview.step(dt);}else{motion.attention.update(dt,{now:now/1000,reduced:motion.reduced,follow:motion.follow,x,y,size:r.width,near:!!p,overHead:!!p&&headContact(x,y,r.width),hx:(x/r.width-.5)/.3,hy:(y/r.height-.46)/.23,blocked:!!touchInput.active||motion.touch.bonking,wake:wakeFlag,poke:!!touchInput.active});
     wakeFlag=false;motion.step(dt);}
     renderer.render(motion.current);drawGesture();syncPreview();}last=now;requestAnimationFrame(draw);}
   requestAnimationFrame(draw);

@@ -223,7 +223,7 @@ app.whenReady().then(async()=>{
     const p=screen.getCursorScreenPoint();
     if(drag)dragStep(p);
     const r=win.getContentBounds(),area=screen.getDisplayMatching(r).workArea;
-    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
+    if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,sx:p.x,sy:p.y,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
   },33);
   // Keep the docked pet above the taskbar, which also sits in the topmost band.
   topTimer=setInterval(()=>{

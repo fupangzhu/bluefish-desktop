@@ -2,7 +2,7 @@ import {headContact} from './attention.mjs';
 import {Motion} from './motion.mjs';
 import {Renderer} from './renderer.mjs';
 import {Peek} from './peek.mjs';
-import {drawHands,eyeRubHands,makeSkin,sampleSkin} from './hands.mjs';
+import {drawHands,drawHeadHands,headGestureHands,makeSkin,sampleSkin} from './hands.mjs';
 import {TouchInput} from './touch.mjs';
 
 // ---- Tuning knobs ---------------------------------------------------------------------------------
@@ -49,7 +49,8 @@ function layout(){
   handsCanvas.width=Math.round(W*dpr);handsCanvas.height=Math.round(H*dpr);
   handsCanvas.style.display='';
   taskbar.style.height=grip+'px';
-  place({offsetX:peek.head.value*s,bob:0});
+  if(renderer&&motion.current&&bluefish.last)drawFrame(motion.current,bluefish.last);
+  else place({offsetX:docked?peek.head.value*s:0,bob:0});
 }
 const headFraction=()=>(1+(CUT_ART_Y-0.5)*RENDER_Y_SCALE)/2;   // where the cut row sits inside the canvas (0..1)
 function place(out){
@@ -57,18 +58,26 @@ function place(out){
   const sleep=motion.current?.sleep||0,rubLift=(motion.current?.rubLift||0)*s;
   if(docked){pos.left=(W-s)/2+out.offsetX;pos.top=ledgeY-s*headFraction()+out.bob+s*.085*sleep-rubLift;}
   else{pos.left=(W-s)/2;pos.top=(H-s)/2+s*.025*sleep-rubLift;}
+  const duck=motion.current?.duck||0;
+  pos.top+=s*.80*duck;
+  canvas.style.opacity=docked?1:1-duck;
   canvas.style.transform=`translate(${pos.left-VIEW_PAD*s}px,${pos.top-VIEW_PAD*s}px)`;
 }
-function drawHandsFrame(out){
+function drawFrame(cur,out){
+  const pose=L.docked?{...cur,roll:cur.roll+out.roll}:cur;
+  place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
+  renderer.render(pose);
   const g=handsCtx;g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,handsCanvas.width,handsCanvas.height);
-  if(!L.docked&&!(motion.current?.rubEyes>0))return;
+  const gestures=pose.guard>.001||pose.rubEyes>.001?headGestureHands(renderer,pose,canvas.getBoundingClientRect()):[];
+  const visibility=1-(pose.duck||0);
   g.setTransform(L.dpr,0,0,L.dpr,0,0);
-  const cur=motion.current;let hands=out.hands;
-  if(cur?.rubEyes>0){
-    const eyes=['l','r'].map(side=>{const e=rig.eyes.find(e=>e.side===side),layer=renderer.byName.get('eye_'+side+'_open'),q=renderer.project(e.center[0],e.center[1],{...cur,roll:cur.roll+out.roll},layer);return {x:pos.left+(q[0]+1)*L.s/2,y:pos.top+(1-q[1])*L.s/2};});
-    hands=eyeRubHands(hands,{eyes,cx:L.W/2,ledgeY:L.ledgeY,size:L.s,mix:cur.rubEyes,phase:cur.rubPhase,hand:cur.rubHand});
-  }
-  drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands,skin,grip:L.grip,onlyHand:L.docked?null:cur?.rubHand});
+  if(L.docked){
+    const alphaByHand=[visibility,visibility];
+    for(const hand of gestures)alphaByHand[hand.i]*=1-hand.alpha;
+    drawHands(g,{cx:L.W/2,ledgeY:L.ledgeY,s:L.s,hands:out.hands,skin,alphaByHand});
+    g.save();g.beginPath();g.rect(0,0,L.W,L.ledgeY);g.clip();
+    drawHeadHands(g,gestures,skin);g.restore();
+  }else drawHeadHands(g,gestures,skin,visibility);
 }
 function handsAlpha(x,y){
   if(!L.docked)return 0;
@@ -78,7 +87,7 @@ function handsAlpha(x,y){
 }
 function hitTest(x,y){
   if(handsAlpha(x,y)>24)return true;
-  if(!renderer)return false;
+  if(!renderer||(!L.docked&&motion.current?.duck>.85))return false;
   if(L.docked&&y>=L.ledgeY)return false;
   return renderer.hitTest(x-pos.left+VIEW_PAD*L.s,y-pos.top+VIEW_PAD*L.s);
 }
@@ -104,14 +113,16 @@ function applyState(next){
 
 // ---- input ------------------------------------------------------------------------------------------
 function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
+const eventPoint=e=>({x:e.clientX,y:e.clientY,sx:e.screenX,sy:e.screenY});
 function onDown(e){
-  if(e.button!==0||activePointer!==null||!hitTest(e.clientX,e.clientY))return;
+  if(e.button!==0||activePointer!==null||motion.touch.bonking||!hitTest(e.clientX,e.clientY))return;
   activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
-  if(motion.attention.current.sleeping){wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
+  if(motion.attention.current.sleeping){motion.touch.headTap=null;wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
   const part=partAt(e.clientX,e.clientY);
   const grip=part==='ahoge'||part==='hair_front'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
-  touchInput.begin(part,{x:e.clientX,y:e.clientY},L.s,grip);
+  const head=!handsAlpha(e.clientX,e.clientY)&&(part==='hair_front'||(!part&&headContact(e.clientX-pos.left,e.clientY-pos.top,L.s)));
+  touchInput.begin(part,eventPoint(e),L.s,grip,{head});
   if(!part)motion.blink();pokeFlag=true;
   lastHit=true;pet?.setInteractive(true);
   document.documentElement.style.cursor=part==='ahoge'||part==='hair_front'?'grabbing':'';
@@ -119,7 +130,7 @@ function onDown(e){
 function endDrag(e){
   if(e?.pointerId!==undefined&&activePointer!==null&&e.pointerId!==activePointer)return;
   // Include the release coordinates in case the final movement preceded a pointer tick.
-  if(e?.type==='pointerup')touchInput.move({x:e.clientX,y:e.clientY});
+  if(e?.type==='pointerup')touchInput.move(eventPoint(e));
   touchInput.end(e?.type!=='pointerup');activePointer=null;lastHit=null;
   document.documentElement.style.cursor='';
 }
@@ -129,7 +140,7 @@ for(const el of [canvas,handsCanvas]){
   el.addEventListener('lostpointercapture',endDrag);
   el.addEventListener('contextmenu',e=>{e.preventDefault();endDrag();pokeFlag=true;pet?.menu();});
 }
-addEventListener('pointermove',e=>{if(e.pointerId===activePointer)touchInput.move({x:e.clientX,y:e.clientY});});
+addEventListener('pointermove',e=>{if(e.pointerId===activePointer)touchInput.move(eventPoint(e));});
 addEventListener('pointerup',endDrag);
 addEventListener('blur',()=>{endDrag();touchInput.hover(null,null,L.s);});
 addEventListener('wheel',e=>{pokeFlag=true;if(e.ctrlKey){e.preventDefault();pet?.zoom(-Math.sign(e.deltaY));}},{passive:false});
@@ -148,15 +159,13 @@ function frame(now){
     const hx=fresh?(pointer.x-pos.left)/s:.5,hy=fresh?(pointer.y-pos.top)/s:.5;
     const attention=motion.attention.update(dt,{now:now/1000,reduced:state.reduced,follow:state.follow,innerSide:pointer?.innerSide,x:fresh?pointer.x:NaN,y:fresh?pointer.y:NaN,size:s,near,
       overHead:fresh&&(!L.docked||pointer.y<L.ledgeY)&&headContact(pointer.x-pos.left,pointer.y-pos.top,s),
-      hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active,wake:wakeFlag,poke:pokeFlag||!!touchInput.active});
+      hx:(hx-.5)/.3,hy:(hy-.46)/.23,blocked:!!touchInput.active||motion.touch.bonking,wake:wakeFlag,poke:pokeFlag||!!touchInput.active});
     const out=peek.update(dt,{gx:fresh&&follow&&!touchInput.active?pointer.gx*attention.gazeWeight:0,gy:fresh&&follow?pointer.gy:0,near:!attention.sleeping&&(attention.attentive||!follow),poke:!attention.sleeping&&(pokeFlag||!!touchInput.active),docked:L.docked,reduced:state.reduced,hold:motion.blocksTravel(attention)});
     pokeFlag=false;wakeFlag=false;
     motion.override=follow?out.override:null;
-    if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active&&!attention.reluctant?.active)motion.gesture(out.gesture);
+    if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active&&!motion.touch.bonking&&!attention.reluctant?.active)motion.gesture(out.gesture);
     const cur=motion.step(dt);
-    place({offsetX:L.docked?out.offsetX:0,bob:L.docked?out.bob:0});
-    renderer.render(L.docked?{...cur,roll:cur.roll+out.roll}:cur);
-    drawHandsFrame(out);
+    drawFrame(cur,out);
     bluefish.last=out;
   }
   requestAnimationFrame(frame);
@@ -178,7 +187,7 @@ try{
     pet.onAction(name=>{pokeFlag=true;if(name==='reset'){endDrag();motion.reset();}else motion.gesture(name);});
   }else{
     applyState(state);
-    addEventListener('pointermove',e=>{const s=L.s,cx=pos.left+s/2,cy=pos.top+s/2;setPointer({x:e.clientX,y:e.clientY,gx:clamp((e.clientX-cx)/(s*.7),-1,1),gy:clamp((e.clientY-cy)/(s*.7),-1,1)});});
+    addEventListener('pointermove',e=>{const s=L.s,cx=pos.left+s/2,cy=pos.top+s/2;setPointer({...eventPoint(e),gx:clamp((e.clientX-cx)/(s*.7),-1,1),gy:clamp((e.clientY-cy)/(s*.7),-1,1)});});
     document.documentElement.addEventListener('pointerleave',()=>{pointer=null;motion.setGaze(0,0);});
   }
   layout();

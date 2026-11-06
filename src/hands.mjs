@@ -30,13 +30,13 @@ const SQUEEZE=.03,TAP_LIFT=2,TAP_SQUASH=.1;
 // lift: px the ball is raised (it gets rounder), squash: 0..~0.3 landing flatten (wider, flatter).
 // side: -1 left / 1 right ball. tap (0..1 lift envelope), tapSquash (0..1 landing), squeeze (-1..1): idle micro-motion from Peek.
 // `rot`, `reach` are accepted for API compatibility and unused.
-export function drawHand(ctx,{x,y,w,lift=0,squash=0,skin=makeSkin(),side=0,tap=0,tapSquash=0,squeeze=0,contact=0}){
+export function drawHand(ctx,{x,y,w,lift=0,squash=0,skin=makeSkin(),side=0,tap=0,tapSquash=0,squeeze=0,contact=0,centered=false}){
   const U=w/HAND_WIDTH/240,shape=SHAPES[Math.sign(side)]||SHAPES[0];
   const bw=w*shape.wk,h0=w*HAND_HEIGHT/HAND_WIDTH*shape.hk;
   lift+=tap*TAP_LIFT*U;squash+=tapSquash*TAP_SQUASH;
   const rise=clamp(lift/(h0*1.2),0,1);
   const sw=bw*(1-.08*rise),sh=h0*(1+.28*rise);         // rounder while lifted
-  const bottom=y+shape.dy*U+h0*BELOW_LEDGE-lift;       // keep the bottom edge anchored while squashing
+  const bottom=centered?y+sh/2:y+shape.dy*U+h0*BELOW_LEDGE-lift;       // keep the bottom edge anchored while squashing
   ctx.save();
   ctx.translate(x,bottom);ctx.scale((1+squash*.6)*(1+SQUEEZE*squeeze),(1-squash)*(1-SQUEEZE*squeeze));
   ctx.translate(0,-sh/2);ctx.rotate(shape.tilt);
@@ -48,9 +48,32 @@ export function drawHand(ctx,{x,y,w,lift=0,squash=0,skin=makeSkin(),side=0,tap=0
   ctx.restore();
 }
 // Draws both balls. cx = window centre x, ledgeY, s = avatar size, hands = peek output.
-export function drawHands(ctx,{cx,ledgeY,s,hands,skin,onlyHand=null}){
+export function drawHands(ctx,{cx,ledgeY,s,hands,skin,onlyHand=null,alphaByHand=[1,1]}){
   const w=HAND_WIDTH*s;
-  [-1,1].forEach((side,i)=>{if(onlyHand!==null&&i!==onlyHand)return;const h=hands[i]||{};drawHand(ctx,{x:cx+side*.21*s+(h.x||0),y:ledgeY,w,lift:h.lift||0,squash:h.squash||0,skin,side,tap:h.tap||0,tapSquash:h.tapSquash||0,squeeze:h.squeeze||0,contact:h.contact||0});});
+  [-1,1].forEach((side,i)=>{if(onlyHand!==null&&i!==onlyHand)return;const alpha=alphaByHand[i];if(alpha<=0)return;const h=hands[i]||{};ctx.save();ctx.globalAlpha*=alpha;drawHand(ctx,{x:cx+side*.21*s+(h.x||0),y:ledgeY,w,lift:h.lift||0,squash:h.squash||0,skin,side,tap:h.tap||0,tapSquash:h.tapSquash||0,squeeze:h.squeeze||0,contact:h.contact||0});ctx.restore();});
+}
+// Gesture centers live in the head's coordinate system, even when the native window undocks.
+export function headGestureHands(renderer,pose,rect){
+  const guard=pose.guard||0,rub=pose.rubEyes||0,amount=guard||rub;
+  if(amount<=.001)return [];
+  const size=rect.width/(1+2*renderer.padding),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;
+  return renderer.rig.eyes.flatMap(eye=>{
+    const side=eye.side==='l'?-1:1,i=side<0?0:1;
+    if(!guard&&i!==pose.rubHand)return [];
+    const layer=renderer.byName.get(guard?'hair_front':'eye_'+eye.side+'_open');
+    const q=renderer.project(eye.center[0]+(guard?side*200:0),eye.center[1]-(guard?232:0),pose,layer);
+    const phase=(pose.rubPhase||0)+i*.5;
+    const tx=cx+q[0]*size/2+(guard?0:Math.sin(phase)*size*.006);
+    const ty=cy-q[1]*size/2+(guard?0:Math.cos(phase)*size*.004);
+    const u=amount*amount*(3-2*amount),originX=cx+side*.21*size,originY=cy+.195*size;
+    return [{i,side,x:originX+(tx-originX)*u,y:originY+(ty-originY)*u,w:HAND_WIDTH*size,
+      lift:size*.09*amount,contact:amount*.7,alpha:clamp(amount/.22,0,1),centered:true}];
+  });
+}
+export function drawHeadHands(ctx,hands,skin,visibility=1){
+  for(const {alpha,...hand} of hands){
+    ctx.save();ctx.globalAlpha*=alpha*visibility;drawHand(ctx,{...hand,skin});ctx.restore();
+  }
 }
 // Lift the existing round hands toward projected eyes; no new bitmap is needed.
 export function eyeRubHands(hands,{eyes,cx,ledgeY,size,mix,phase=0,hand=0}){

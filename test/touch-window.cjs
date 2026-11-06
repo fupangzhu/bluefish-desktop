@@ -65,13 +65,14 @@ app.whenReady().then(async()=>{
       const tug={x:p.x+Math.round(size*.06),y:p.y-Math.round(size*.16)};
       wc.send('test-pointer',{...tug,gx:0,gy:0});
       // Wait for rendered input rather than assuming a GPU frame fits in 160ms.
-      for(let frame=0;frame<40;frame++){if(await js('window.bluefish.motion.current.pain>.8'))break;await sleep(50);}
+      for(let frame=0;frame<40;frame++){if(await js('window.bluefish.motion.current.pain>.8&&bluefish.motion.current.guard>.9'))break;await sleep(50);}
       const held=await js('({...window.bluefish.motion.current,part:window.bluefish.touchInput.active?.part})');
       assert.ok(held.pain>.8,`pain active at ${size}: ${JSON.stringify({pain:held.pain,part:held.part,point:p})}`);assert.equal(held.part,'ahoge');assert.deepEqual(dragEvents,[],'hair tug never drags native window');
+      assert.ok(held.guard>.9&&held.shiftX>0&&held.shiftY<0,'the head follows the tug while both hands protect it');
       if(size===460){await shot(docked?'pain-docked':'pain-free');}
       // Keep release inside the window even when a simulated global pointer went outside it.
       await release(p);await sleep(700);
-      assert.equal(await js('window.bluefish.motion.current.pain'),0,'pain recovers after release');
+      assert.equal(await js('window.bluefish.motion.current.pain'),0,'pain recovers after release');assert.equal(await js('bluefish.motion.current.guard'),0);
       evidence.sizes.push({size,docked,points,pain:held.pain,dragEvents:[...dragEvents]});
     }
     await configure(460,false);await shot('rest-free');
@@ -128,6 +129,23 @@ app.whenReady().then(async()=>{
     // Releasing through focus loss must not leave a stuck pain expression.
     const hair=await target('ahoge');await press(hair);input('mouseMove',{x:hair.x+40,y:hair.y+30});await sleep(100);await js('window.dispatchEvent(new Event("blur"))');await sleep(750);
     assert.equal(await js('window.bluefish.motion.current.pain'),0);assert.equal(await js('window.bluefish.touchInput.active'),null);await release(hair);
+    // A real double click on the head covers it, clips it below the taskbar, then returns.
+    await configure(240,true);
+    await js('bluefish.motion.touch.random=()=>0;void 0');
+    const scalp=await js('(()=>{const b=bluefish,p=b.position(),s=b.state.size;return {x:Math.round(p.left+s*.5),y:Math.round(p.top+s*.46)};})()');
+    assert.ok(await js(`bluefish.hitTest(${scalp.x},${scalp.y})`));
+    await press(scalp);await release(scalp);assert.equal(await js('bluefish.motion.touch.bonking'),false);
+    await press(scalp);await release(scalp);assert.equal(await js('bluefish.motion.touch.bonking'),true);
+    const until=async (code,ms)=>{const end=Date.now()+ms;while(Date.now()<end){if(await js(code))return;await sleep(30);}assert.fail(code);};
+    await until('bluefish.motion.current.guard>.8',900);await shot('bonk-guard');
+    await until('bluefish.motion.current.duck===1',1400);
+    assert.equal(await js(`bluefish.hitTest(${scalp.x},${scalp.y})`),false);
+    const clear=await js('(()=>{const c=document.querySelector("#hands"),a=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return !a.some((v,i)=>i%4===3&&v>24);})()');
+    assert.ok(clear,'hands also disappear');await shot('bonk-hidden');
+    await sleep(1000);assert.equal(await js('bluefish.motion.current.duck'),1);
+    await until('!bluefish.motion.touch.bonking',5500);assert.equal(await js('bluefish.motion.current.duck'),0);await shot('bonk-back');
+    evidence.bonk=true;
+    await configure(460,false);
     // Exact-source alpha: the transparent inside of the loop is never a grab target.
     const hole=await js(`(()=>{const b=window.bluefish,r=b.renderer,l=r.byName.get('ahoge'),p=b.position(),q=r.project(1370,295,b.motion.current,l);return b.partAt(p.left+(q[0]+1)*460/2,p.top+(1-q[1])*460/2);})()`);
     assert.notEqual(hole,'ahoge');evidence.loopHole=hole;

@@ -49,7 +49,7 @@ export class Motion {
   gesture(name){if(name==='blink')this.blink();else{this.gestureName=name;this.gestureAt=this.time;}}
   playCue(cue,delay=0){const c=validateCue(cue);if(!Number.isFinite(delay)||delay<0||delay>30)throw Error('无效延迟');this.queue=this.queue.filter(q=>q.end>this.time);if(this.queue.length>=24)throw Error('动作队列已满');this.queue.push({...c,start:this.time+delay,end:this.time+delay+c.duration});}
   reset(){this.queue=[];this.touch.reset();this.attention.reset();this.wakePending=false;this.wakeReadyAt=null;this.eyelids.reset();this.wake.reset();this.doze.reset();this.lastWakeId=0;this.springs.ears.value=0;this.springs.ears.velocity=0;this.springs.wag.value=0;this.springs.wag.velocity=0;this.springs.side.value=1;this.springs.side.velocity=0;this.pose={yaw:0,pitch:0,roll:0};this.gestureAt=-100;this.gaze={x:0,y:0};this.blinkAt=-100;this.nextBlink=this.time+3;}
-  blocksTravel(attention=this.attention.current){return !!attention.reluctant?.active||!!attention.sleeping||this.wake.active||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
+  blocksTravel(attention=this.attention.current){return this.touch.bonking||!!attention.reluctant?.active||!!attention.sleeping||this.wake.active||(!attention.interacting&&!!(attention.rubbing||attention.resting||attention.sleep>.01||this.wakePending||this.wake.active));}
   step(dt){
     this.time+=clamp(dt,0,0.1);const t=this.time,attention=this.attention.current,sleep=attention.sleep||0,touch=this.touch.step(dt,this.reduced,this.idle&&!attention.sleeping&&sleep<.1);
     if(this.idle&&!this.reduced&&!attention.sleeping&&sleep<.1&&t>=this.nextBlink){this.blink();this.nextBlink=t+3.2+this.random()*4;}
@@ -58,6 +58,7 @@ export class Motion {
     const pet=(attention.rub||0)*(1-sleep);
     const lids=this.eyelids.sample(t,attention);
     if(attention.wakeId!==this.lastWakeId){this.lastWakeId=attention.wakeId;if(!this.wake.active||this.wake.preset==='peek')this.wake.start('gentle');}
+    if((touch.bonk&&this.wake.active)||(touch.guard>.12&&this.wake.preset==='rubeyes'))this.wake.finish();
     const wakePose=this.wake.step(dt,{eyesOpen:!attention.sleepClosure&&lids.left>=.99&&lids.right>=.99,reduced:this.reduced,clock:this.attention.idleTime});
     const peeking=this.wake.preset==='peek';
     if(peeking){touch.earTwitchL=touch.earTwitchR=null;touch.earFoldL=touch.earFoldR=0;}
@@ -106,6 +107,7 @@ export class Motion {
     if(Number.isFinite(wakePose.eyeCap)){p.ParamEyeLOpen=p.ParamEyeROpen=wakePose.eyeCap;}
     if(this.gestureName==='wink'&&gt>=0&&gt<.6)p.ParamEyeLOpen*=Math.abs(Math.cos(gt/.6*Math.PI));
     if(peeking){p.ParamEyeLOpen=wakePose.peekEye||0;p.ParamEyeROpen=0;}
-    return this.current={reluctant:!!reluctant.active,sideEye:rm,shiftX:reluctant.shiftX||0,yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeSide:ease('side',dream.side??this.springs.side.value),ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),earMoodL:peeking?-1+1.45*(wakePose.peekEar||0):undefined,earSleepL:peeking?1-(wakePose.peekEar||0):undefined,sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubHand:wakePose.rubHand??0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018):0,...touch};
+    if(touch.duck){p.ParamEyeLOpen*=1-touch.duck;p.ParamEyeROpen*=1-touch.duck;}
+    return this.current={reluctant:!!reluctant.active,sideEye:rm,shiftX:(reluctant.shiftX||0)+touch.ahogePullX*.6,shiftY:touch.ahogePullY*.48,yaw:ease('yaw',p.ParamAngleX),pitch:ease('pitch',p.ParamAngleY),roll:ease('roll',p.ParamAngleZ),gx:ease('gx',p.ParamEyeBallX),gy:ease('gy',p.ParamEyeBallY),left:p.ParamEyeLOpen,right:p.ParamEyeROpen,hair:ease('hair',p.ParamAngleX),ahogeWag:wag,ahogeSide:ease('side',dream.side??this.springs.side.value),ahogeDroop:ease('droop',droopTarget),earMood:clamp(ease('ears',earTarget),-1,1),earMoodL:peeking?-1+1.45*(wakePose.peekEar||0):undefined,earSleepL:peeking?1-(wakePose.peekEar||0):undefined,sleep,sleeping:!!attention.sleeping,wakePreset:this.wake.preset,rubEyes:wakePose.rubEyes||0,rubHand:wakePose.rubHand??0,rubPhase:wakePose.rubPhase||0,rubLift:wakePose.rubLift||0,rub:pet,rubReaction:attention.reaction||null,relax:attention.relax||0,movementBlocked:this.blocksTravel(),time:t,secondary:this.idle&&!this.reduced&&sleep<.1,breath:this.idle&&!this.reduced?(sleep>.5?dream.breath*sleep:Math.sin(t*1.6)*.0018):0,...touch};
   }
 }

@@ -133,7 +133,7 @@ export class Renderer{
     const z=layer.depth+bulge,yaw=rad(s.yaw),pitch=rad(s.pitch),roll=rad(s.roll);
     const xx=x*Math.cos(yaw)+z*Math.sin(yaw),zz=-x*Math.sin(yaw)+z*Math.cos(yaw);
     const yy=y*Math.cos(pitch)-zz*Math.sin(pitch),rx=xx*Math.cos(roll)-yy*Math.sin(roll),ry=xx*Math.sin(roll)+yy*Math.cos(roll);
-    return [rx*1.76+2*(s.shiftX||0),-(ry+(s.breath||0))*1.76];
+    return [rx*1.76+2*(s.shiftX||0),-(ry+(s.breath||0))*1.76-2*(s.shiftY||0)];
   }
   draw(layer,s,opacity=1,eyeOpen=-1){
     if(!layer||opacity<=0)return;
@@ -158,8 +158,14 @@ export class Renderer{
       this.ahogePose=reboundAhoge(this.lastAhogePull.pose,grab.strength);
     }else if(grab){
       const rect=c.getBoundingClientRect(),layer=this.byName.get('ahoge');
-      const aim={x:(grab.client.x-rect.left)/rect.width*2-1,y:1-(grab.client.y-rect.top)/rect.height*2};
-      aim.x*=1+2*this.padding;aim.y*=1+2*this.padding;
+      let aim;
+      if(grab.relative){ // Editor playback supplies a virtual cursor offset measured at 240 px.
+        const origin=this.project(grab.source.x,grab.source.y,s,layer,true);
+        aim={x:origin[0]+grab.client.x/120,y:origin[1]-grab.client.y/120};
+      }else{
+        const scale=1+2*this.padding;
+        aim={x:((grab.client.x-rect.left)/rect.width*2-1)*scale,y:(1-(grab.client.y-rect.top)/rect.height*2)*scale};
+      }
       // Invert the current head projection, so looking around never slides the
       // pinched material point out from under the cursor.
       let x=grab.source.x,y=grab.source.y;
