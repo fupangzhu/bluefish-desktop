@@ -123,8 +123,29 @@ function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;
   track=p.win||null;wall=p.wall&&L.docked?{side:Math.sign(p.wall.side)||0,gap:+p.wall.gap||0}:{side:0,gap:0};motion.wall=wall;
   if(track&&towOrigin!==null)motion.touch.tow.setLimits(track.min-towOrigin,track.max-towOrigin);touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
 const eventPoint=e=>({x:e.clientX,y:e.clientY,sx:e.screenX,sy:e.screenY});
+// Single click opens the chat bubble. It must not steal a drag, a pull, a stroke, a double-tap bonk
+// or a wake-up click, so it is only confirmed after the double-tap window has passed.
+const CLICK={maxMs:350,slop:.03,minSlop:6,confirm:420};
+let down=null,chatTimer=0;
+function busyForChat(){const a=motion.attention.current;return a.sleeping||a.woke||motion.wake.active||motion.touch.bonking||motion.touch.dip.active||!!touchInput.active;}
+function clickEnded(e){
+  const d=down;down=null;
+  const verdict=!d?'no-press':e?.type!=='pointerup'?'cancel':d.blocked?'blocked':
+    Math.hypot(e.clientX-d.x,e.clientY-d.y)>Math.max(CLICK.minSlop,L.s*CLICK.slop)||touchInput.active?.moved?'moved':
+    performance.now()-d.at>CLICK.maxMs?'long':'click';
+  bluefish.lastClick=verdict;
+  return verdict==='click';
+}
+function armChat(){
+  clearTimeout(chatTimer);
+  chatTimer=setTimeout(()=>{chatTimer=0;if(!busyForChat())pet?.chat?.();},CLICK.confirm);
+}
 function onDown(e){
+  // Any second press inside the confirm window means this was not a single click.
+  const second=!!chatTimer;
+  if(chatTimer){clearTimeout(chatTimer);chatTimer=0;}
   if(e.button!==0||activePointer!==null||motion.touch.bonking||!hitTest(e.clientX,e.clientY))return;
+  down={x:e.clientX,y:e.clientY,at:performance.now(),blocked:second||busyForChat()};
   activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
   if(motion.attention.current.sleeping){motion.touch.headTap=null;wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
@@ -146,7 +167,9 @@ function endDrag(e){
   // Include the release coordinates in case the final movement preceded a pointer tick.
   if(e?.type==='pointerup')touchInput.move(eventPoint(e));
   const moved=touchInput.active?.part==='body'&&touchInput.active.moved;
-  touchInput.end(e?.type!=='pointerup');
+  const click=activePointer!==null&&clickEnded(e);
+  const bonked=touchInput.end(e?.type!=='pointerup');
+  if(click&&!bonked&&!motion.touch.bonking)armChat();
   if(moved)motion.slump.arrive();activePointer=null;lastHit=null;
   document.documentElement.style.cursor='';
 }
@@ -206,7 +229,15 @@ try{
   skin=await sampleSkin();
   if(pet){
     pet.onPointer(setPointer);
-    pet.onAction(name=>{pokeFlag=true;if(name==='reset'){endDrag();motion.reset();}else motion.gesture(name);});
+    pet.onAction(name=>{
+      if(name==='reset'){pokeFlag=true;endDrag();motion.reset();return;}
+      // Gestures chosen by the chat brain: an ear flick is fine even asleep, the rest need her awake.
+      if(name==='ear'){motion.touch.twitch(Math.random()<.5?'l':'r');return;}
+      if(motion.attention.current.sleeping)return;
+      pokeFlag=true;
+      if(name==='dip'){if(!motion.touch.bonking&&!touchInput.active)motion.touch.dip.start(0,'tow');}
+      else motion.gesture(name);
+    });
   }else{
     applyState(state);
     addEventListener('pointermove',e=>{const s=L.s,cx=pos.left+s/2,cy=pos.top+s/2;setPointer({...eventPoint(e),gx:clamp((e.clientX-cx)/(s*.7),-1,1),gy:clamp((e.clientY-cy)/(s*.7),-1,1)});});

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'"><title>小鱼</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="bubble.css"></head>
+<body>
+<div class="wrap">
+  <div class="card bubble" id="card">
+    <div class="log" id="log" aria-live="polite"></div>
+    <div class="typing" id="typing" hidden aria-label="小鱼正在输入"><i></i><i></i><i></i></div>
+    <form class="composer" id="composer" autocomplete="off">
+      <input id="text" type="text" maxlength="500" placeholder="和小鱼说点什么" aria-label="消息">
+      <button class="icon-btn" id="sendBtn" type="submit" title="发送" aria-label="发送"><span data-icon="send"></span></button>
+      <button class="icon-btn" id="gear" type="button" title="设置" aria-label="设置" aria-pressed="false"><span data-icon="gear"></span></button>
+    </form>
+    <section class="settings" id="settings" hidden aria-label="聊天设置">
+      <label>接口地址<input id="baseUrl" type="url" spellcheck="false" placeholder="https://api.deepseek.com"></label>
+      <label>API Key<input id="apiKey" type="password" spellcheck="false" placeholder="sk-..."></label>
+      <label>模型
+        <span class="inline"><input id="model" list="modelList" spellcheck="false" placeholder="deepseek-v4-flash"><button class="pill" id="fetchModels" type="button">获取列表</button></span>
+        <datalist id="modelList"></datalist>
+      </label>
+      <label>人设<textarea id="persona" rows="5" maxlength="2000"></textarea></label>
+      <label>每天最多用多少 token<input id="dailyTokens" type="number" min="0" step="10000"></label>
+      <p class="hint" id="usage"></p>
+      <p class="hint error" id="settingsError" hidden></p>
+      <div class="actions"><button class="pill" id="resetPersona" type="button">恢复默认人设</button><button class="pill primary" id="save" type="button">保存</button></div>
+    </section>
+  </div>
+  <div class="tail" aria-hidden="true"></div>
+</div>
+<script type="module" src="src/bubble.mjs"></script>
+</body></html>

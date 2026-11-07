@@ -1,0 +1,16 @@
+// Chat bubble window: talks to the brain host in the main process only through these calls.
+const {contextBridge,ipcRenderer}=require('electron');
+contextBridge.exposeInMainWorld('bubble',{
+  send:text=>ipcRenderer.send('bubble:send',String(text??'')),
+  typing:()=>ipcRenderer.send('bubble:typing'),
+  close:()=>ipcRenderer.send('bubble:close'),
+  fit:height=>ipcRenderer.send('bubble:fit',Number(height)),
+  settings:()=>ipcRenderer.invoke('bubble:settings'),
+  save:patch=>ipcRenderer.invoke('bubble:save',patch),
+  models:patch=>ipcRenderer.invoke('bubble:models',patch),
+  defaults:()=>ipcRenderer.invoke('bubble:defaults'),
+  history:()=>ipcRenderer.invoke('bubble:history'),
+  onLine:cb=>ipcRenderer.on('bubble:line',(_e,line)=>cb(line)),
+  onTyping:cb=>ipcRenderer.on('bubble:typing',(_e,on)=>cb(on===true)),
+  onMode:cb=>ipcRenderer.on('bubble:mode',(_e,mode)=>cb(mode))
+});

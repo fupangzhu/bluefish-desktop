@@ -16,16 +16,17 @@
 仓库内关键位置：
 
 ```
-desktop/        Electron 主进程（窗口、贴边、拖拽、菜单、独立源码编辑器、单实例锁、托盘）
-src/            renderer（WebGL 分层网格）· motion · peek（小手/情绪）· hands · overlay · menu · app / preview（仅源码编辑器）
+desktop/        Electron 主进程（窗口、贴边、拖拽、菜单、聊天气泡与大脑宿主 brain.cjs、独立源码编辑器、单实例锁、托盘）
+src/            renderer（WebGL 分层网格）· motion · peek（小手/情绪）· hands · overlay · menu · bubble · brain/（聊天大脑）· app / preview（仅源码编辑器）
 overlay.html    桌面宠物（透明窗口）
 menu.html       右键菜单
+bubble.html     聊天气泡与设置
 index.html      源码动画编辑器
 tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 161 项）+ Electron 交互回归
+test/           node --test 单测（当前 178 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
@@ -52,7 +53,7 @@ npm test           # node --test，逻辑测试
 
 日常开发直接修改源码并重启本机桌宠；只有明确要求发布时才构建 EXE/ZIP。发布清单 `desktop/runtime-files.json` 排除 index/style/app/preview/editor、测试、工具和文档，右键菜单不包含动画按钮或编辑器入口。
 
-调试快捷键：`Ctrl+Shift+F10` 显示/隐藏　`Ctrl+Shift+F11` 回到原位。
+快捷键：`Ctrl+Shift+F9` 打开/收起聊天　`Ctrl+Shift+F10` 显示/隐藏　`Ctrl+Shift+F11` 回到原位。
 
 ### 呆毛、刘海与耳朵交互（当前源码）
 
@@ -74,6 +75,22 @@ node node_modules/electron/cli.js test/touch-window.cjs
 ```
 
 此回归使用隐藏 Electron 窗口，验证 150 / 240 / 460 尺寸、贴边 / 悬浮模式、左右耳随机次数、牵拉 / 拉直 / 拉伸、抓点跟随、发根固定、萎靡 / 兴奋耳姿态、待机扑耳及失焦恢复；结果与截图在 `.test-output/touch/`。
+
+### 聊天（第一阶段，当前源码）
+
+设计见 `docs/superpowers/specs/2026-11-06-chat-brain-design.md`。
+
+- 醒着时单击小鱼（按下到松开不超过 0.35 秒、移动不超过 max(6px, 3%×头宽)，并等 0.42 秒确认不是双击捂头）、右键菜单的“说话”或 `Ctrl+Shift+F9` 打开头顶的气泡输入框。睡着时单击仍只是叫醒；拖动、拉耳朵、拽呆毛、抚摸都不会打开。
+- `src/brain/`：`debounce`（等主人说完：停 2 秒，活跃对话 5 秒，打字中顺延，单批最长 8 秒）、`brain`（规划器只能调用 reply/act/wait/stop 工具，默认沉默；说话交给回复器单独写；一轮最多 4 次调用；思考中来了新消息会重新想）、`speak`（最多 3 条、按字数打字延迟）、`prompts`（默认人设和工具定义）、`llm`（OpenAI 兼容接口）、`events`（只追加的事件流）。
+- `desktop/brain.cjs` 在主进程里调用模型。API Key 用 Electron `safeStorage` 加密保存在 `userData/brain/config.json`，从不发给渲染进程；`events.jsonl` 记录对话，`usage.json` 记当天 token，超过每日上限（默认 20 万）就不再调用模型。
+- 动作通过现有 `action` IPC 发给小鱼：点头、摇头、开心、眨眼、眨单眼、下躲、抖耳朵；睡着时只允许抖耳朵。
+- 设置在气泡的齿轮里：接口地址（默认 `https://api.deepseek.com`）、API Key、模型（可从 `/models` 获取列表，默认 `deepseek-v4-flash`）、人设、每日 token 上限。
+
+```powershell
+node test/chat-smoke.cjs
+```
+
+此回归启动真实桌宠和一个假的 OpenAI 兼容模型，用合成鼠标事件验证单击打开输入框、双击和拖动不会打开、她点头并分两句回话、气泡位于呆毛上方；结果与截图在 `.test-output/chat/`。
 
 ## 4. 重新生成 README 素材
 

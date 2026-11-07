@@ -1,17 +1,25 @@
-const {app,BrowserWindow,ipcMain,screen,globalShortcut,Tray,nativeImage}=require('electron');
+const {app,BrowserWindow,ipcMain,screen,globalShortcut,Tray,nativeImage,safeStorage}=require('electron');
 const path=require('node:path'),fs=require('node:fs');
 const {createDrag,dragBounds}=require('./drag.cjs');
 const dock=require('./dock.cjs');
+const {createBrainHost}=require('./brain.cjs');
 app.setName('Bluefish Complete');
 app.setAppUserModelId('com.fupangzhu.bluefish');
 const APP_ICON=path.join(__dirname,'../assets/icon.ico');
-app.setPath('userData',path.join(app.getPath('appData'),'bluefish-complete'));
-const MENU_W=280;
-const COMMANDS=new Set(['toggle-visible','quit','close-menu']);
+// BLUEFISH_USER_DATA lets the Electron regression tests run against a throwaway profile.
+app.setPath('userData',process.env.BLUEFISH_USER_DATA||path.join(app.getPath('appData'),'bluefish-complete'));
+const MENU_W=280,BUBBLE_W=340,BUBBLE_PEEK_MS=12000,BUBBLE_IDLE_MS=45000;
+const COMMANDS=new Set(['toggle-visible','quit','close-menu','chat']);
+// Gestures the brain may ask the pet for; anything else is dropped.
+const PET_ACTIONS=new Set(['nod','shakehead','happy','wink','blink','dip','ear']);
 const SMOKE=process.env.BLUEFISH_SMOKE==='1';
 const alive=w=>!!w&&!w.isDestroyed();
 const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
-let win,menuWin,server,timer,topTimer,drag=null,tray,saveTimer;
+let win,menuWin,bubbleWin,brainHost,server,timer,topTimer,drag=null,tray,saveTimer;
+let bubbleHeight=120,bubbleMode=null,bubbleHideTimer=null,bubbleActiveAt=0;
+// The smoke test drives synthetic input events, so it also stands in for the cursor they imply.
+let smokeCursor=null;
+const cursorPoint=()=>SMOKE&&smokeCursor?{...smokeCursor}:screen.getCursorScreenPoint();
 let lastSet=null,menuAnchor={x:0,y:0},menuShownAt=0,menuHeight=400;
 // Main owns the settings; every change is broadcast to pet and menu.
 const state={size:dock.DEFAULT_SIZE,docked:true,follow:true,idle:true,reduced:false,pose:{yaw:0,pitch:0,roll:0}};
@@ -89,7 +97,7 @@ app.whenReady().then(async()=>{
       b=dock.freeBounds(a,state.size,{x:cx,y:fromDocked?a.y+a.height-12-state.size/2:cy});
     }
     updateTop();applyBounds(b);
-    if(drag){const active=drag.active;drag=createDrag(screen.getCursorScreenPoint(),lastSet,{lockY:state.docked});drag.active=active;}
+    if(drag){const active=drag.active;drag=createDrag(cursorPoint(),lastSet,{lockY:state.docked});drag.active=active;}
   }
 
   // ---- state ----------------------------------------------------------------------
@@ -105,7 +113,7 @@ app.whenReady().then(async()=>{
   const sendPet=(channel,payload)=>{if(alive(win))win.webContents.send(channel,payload);};
   function toggleVisibility(){
     drag=null;hideMenu();
-    if(win.isVisible())win.hide();else win.showInactive();
+    if(win.isVisible()){win.hide();hideBubble();}else win.showInactive();
   }
   function resetPosition(){
     drag=null;
@@ -159,8 +167,64 @@ app.whenReady().then(async()=>{
       case 'toggle-visible':toggleVisibility();break;
       case 'quit':app.quit();break;
       case 'close-menu':hideMenu();break;
+      case 'chat':hideMenu();openChat();break;
     }
   }
+
+  // ---- chat bubble -----------------------------------------------------------------------------
+  // Where the top of her head is on screen (the bubble's tail points there).
+  function bubbleBounds(){
+    const b=lastSet||win.getBounds(),s=state.size,cx=b.x+b.width/2;
+    // Measured from the render: the ahoge tip sits ~.45×size below the window top, docked or free.
+    const head=b.y+Math.round(s*.43);
+    const a=screen.getDisplayNearestPoint({x:Math.round(cx),y:head}).workArea;
+    return {x:Math.round(clamp(cx-BUBBLE_W/2,a.x,a.x+a.width-BUBBLE_W)),y:Math.round(clamp(head-bubbleHeight,a.y,a.y+a.height-bubbleHeight)),width:BUBBLE_W,height:bubbleHeight};
+  }
+  function placeBubble(){
+    if(!alive(bubbleWin))return;
+    const n=bubbleBounds(),c=bubbleWin.getBounds();
+    if(n.x!==c.x||n.y!==c.y||n.width!==c.width||n.height!==c.height)bubbleWin.setBounds(n);
+  }
+  function createBubble(){
+    bubbleWin=new BrowserWindow({width:BUBBLE_W,height:bubbleHeight,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,skipTaskbar:true,resizable:false,maximizable:false,minimizable:false,fullscreenable:false,show:false,title:'小鱼',webPreferences:{preload:path.join(__dirname,'bubble-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+    bubbleWin.setAlwaysOnTop(true,'screen-saver');
+    harden(bubbleWin.webContents);
+    bubbleWin.on('blur',()=>{if(bubbleMode==='chat')armBubbleHide(BUBBLE_IDLE_MS);});
+    bubbleWin.on('focus',()=>clearTimeout(bubbleHideTimer));
+    bubbleWin.on('closed',()=>{bubbleWin=null;bubbleMode=null;});
+    return bubbleWin.loadURL(base+'/bubble.html').catch(()=>{});
+  }
+  function armBubbleHide(ms){clearTimeout(bubbleHideTimer);bubbleHideTimer=setTimeout(hideBubble,ms);}
+  function hideBubble(){clearTimeout(bubbleHideTimer);bubbleMode=null;if(alive(bubbleWin)&&bubbleWin.isVisible())bubbleWin.hide();}
+  // chat: input box, focused. peek: just her lines, never steals focus, fades on its own.
+  async function showBubble(mode,{settings=false}={}){
+    if(!alive(bubbleWin))await createBubble();
+    if(!win.isVisible())win.showInactive();
+    hideMenu();
+    const upgrade=mode==='chat'||bubbleMode!=='chat';
+    if(upgrade){bubbleMode=mode;bubbleWin.webContents.send('bubble:mode',{mode,settings});}
+    placeBubble();
+    if(bubbleMode==='chat'){clearTimeout(bubbleHideTimer);bubbleWin.show();bubbleWin.moveTop();bubbleWin.focus();}
+    else{bubbleWin.showInactive();bubbleWin.moveTop();armBubbleHide(BUBBLE_PEEK_MS);}
+    bubbleActiveAt=Date.now();
+  }
+  function openChat(){showBubble('chat');}
+  function toggleChat(){if(bubbleMode==='chat'&&alive(bubbleWin)&&bubbleWin.isVisible())hideBubble();else openChat();}
+  const sendBubble=(channel,payload)=>{if(alive(bubbleWin))bubbleWin.webContents.send(channel,payload);};
+  // Only the desktop channel shows text in the bubble; other channels just make her react.
+  const brainOut={
+    say(text,channel){
+      if(channel!=='desktop'){sendPet('action','ear');return;}
+      showBubble('peek').then(()=>sendBubble('bubble:line',{who:'her',text}));
+    },
+    act(action,channel){if(PET_ACTIONS.has(action))sendPet('action',action);},
+    typing(on,channel){if(channel==='desktop')sendBubble('bubble:typing',!!on);},
+    notice(text,channel,{settings=false}={}){
+      if(channel!=='desktop'&&!settings)return;
+      showBubble(settings?'chat':'peek',{settings}).then(()=>sendBubble('bubble:line',{who:'notice',text,settings}));
+    },
+    state(name){if(name==='thinking')sendPet('action','ear');}
+  };
 
   // ---- IPC (every sender is validated) ------------------------------------------------
   const petOwned=e=>alive(win)&&e.sender===win.webContents;
@@ -168,7 +232,7 @@ app.whenReady().then(async()=>{
   ipcMain.on('interactive',(e,hit)=>{if(!petOwned(e)||drag)return;win.setIgnoreMouseEvents(hit!==true,{forward:true});});
   ipcMain.on('drag',(e,on)=>{
     if(!petOwned(e))return;
-    if(on===true){drag=createDrag(screen.getCursorScreenPoint(),lastSet||win.getBounds(),{lockY:state.docked});win.setIgnoreMouseEvents(false);}
+    if(on===true){drag=createDrag(cursorPoint(),lastSet||win.getBounds(),{lockY:state.docked});win.setIgnoreMouseEvents(false);}
     else endDrag();
   });
   // Ahoge tow: the renderer simulates the elastic follow and asks for a docked window x.
@@ -191,6 +255,22 @@ app.whenReady().then(async()=>{
     menuHeight=clamp(Math.round(height),80,600);
     if(menuWin.isVisible())placeMenu();
   });
+  // chat
+  const bubbleOwned=e=>alive(bubbleWin)&&e.sender===bubbleWin.webContents;
+  const safely=fn=>async(...a)=>{try{return await fn(...a);}catch(err){return {error:err?.message||String(err)};}};
+  ipcMain.on('chat',e=>{if(petOwned(e))toggleChat();});
+  ipcMain.on('bubble:send',(e,text)=>{if(!bubbleOwned(e)||typeof text!=='string')return;bubbleActiveAt=Date.now();brainHost?.receive(text.slice(0,2000),'desktop');});
+  ipcMain.on('bubble:typing',e=>{if(bubbleOwned(e))brainHost?.typing();});
+  ipcMain.on('bubble:close',e=>{if(bubbleOwned(e))hideBubble();});
+  ipcMain.on('bubble:fit',(e,height)=>{
+    if(!bubbleOwned(e)||typeof height!=='number'||!Number.isFinite(height))return;
+    bubbleHeight=clamp(Math.round(height),60,720);placeBubble();
+  });
+  ipcMain.handle('bubble:settings',e=>bubbleOwned(e)&&brainHost?brainHost.settings():null);
+  ipcMain.handle('bubble:save',safely((e,patch)=>bubbleOwned(e)&&brainHost?brainHost.update(patch):null));
+  ipcMain.handle('bubble:models',safely((e,patch)=>bubbleOwned(e)&&brainHost?brainHost.models(patch):[]));
+  ipcMain.handle('bubble:defaults',safely(e=>bubbleOwned(e)&&brainHost?brainHost.defaults():{persona:''}));
+  ipcMain.handle('bubble:history',e=>bubbleOwned(e)&&brainHost?brainHost.history(12).filter(x=>x.channel==='desktop').map(x=>({type:x.type,text:x.text})):[]);
 
   // ---- dragging -------------------------------------------------------------------------
   function undock(p){
@@ -226,7 +306,7 @@ app.whenReady().then(async()=>{
   tray.on('right-click',()=>showMenuAt(screen.getCursorScreenPoint()));
   timer=setInterval(()=>{
     if(!alive(win))return;
-    const p=screen.getCursorScreenPoint();
+    const p=cursorPoint();
     if(drag)dragStep(p);
     const r=win.getContentBounds(),display=screen.getDisplayMatching(r),area=display.workArea;
     let track=null,wall={side:0,gap:0};
@@ -234,6 +314,7 @@ app.whenReady().then(async()=>{
       const others=screen.getAllDisplays().filter(d=>d.id!==display.id).map(d=>d.bounds);
       track={x:lastSet.x,...dock.dockRange(area,display.bounds,state.size)};wall=dock.wallInfo(lastSet,display.bounds,state.size,others);
     }
+    if(alive(bubbleWin)&&bubbleWin.isVisible())placeBubble();
     if(win.isVisible())win.webContents.send('pointer',{x:p.x-r.x,y:p.y-r.y,sx:p.x,sy:p.y,win:track,wall,innerSide:r.x+r.width*.5<area.x+area.width*.5?1:-1,gx:clamp((p.x-r.x-r.width*.5)/Math.max(200,area.width*.45),-1,1),gy:clamp((p.y-r.y-(state.docked?r.height-Math.round(state.size*.05)-state.size*.2024:r.height*.5))/Math.max(200,area.height*.45),-1,1)});
   },33);
   // Keep the docked pet above the taskbar, which also sits in the topmost band.
@@ -245,8 +326,12 @@ app.whenReady().then(async()=>{
   screen.on('display-metrics-changed',()=>{if(alive(win))relayout();});
   globalShortcut.register('CommandOrControl+Shift+F10',toggleVisibility);
   globalShortcut.register('CommandOrControl+Shift+F11',resetPosition);
+  globalShortcut.register('CommandOrControl+Shift+F9',toggleChat);
   win.on('closed',()=>{win=null;app.quit();});
   createMenu();
+  try{brainHost=await createBrainHost({dir:path.join(app.getPath('userData'),'brain'),safeStorage,out:brainOut}).init();}
+  catch(e){console.error('brain init failed',e);}
+  createBubble();
 
   // ---- smoke ---------------------------------------------------------------------------------
   if(SMOKE){
@@ -282,12 +367,59 @@ app.whenReady().then(async()=>{
         evidence.editorStatus=await win.webContents.executeJavaScript('fetch("/").then(r=>r.status)');
         evidence.menuAnimationButtons=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-action]").length');
         evidence.menuEditorEntries=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-command=open-console]").length');
+        // Chat: real input events on the pet, a fake OpenAI-compatible model behind the brain.
+        if(process.env.BLUEFISH_SMOKE_CHAT){
+          const chat=evidence.chat={};
+          // Fill the settings through the bubble UI, exactly as a person would.
+          await showBubble('chat');await sleep(400);
+          chat.saveUi=await bubbleWin.webContents.executeJavaScript(`(async()=>{
+            const $=s=>document.querySelector(s),wait=ms=>new Promise(r=>setTimeout(r,ms));
+            $('#gear').click();await wait(300);
+            const set=(id,v)=>{const el=$(id);el.value=v;el.dispatchEvent(new Event('input',{bubbles:true}));};
+            set('#baseUrl',${JSON.stringify(process.env.BLUEFISH_SMOKE_CHAT)});set('#apiKey','smoke-key');set('#model','fake-model');
+            $('#fetchModels').click();await wait(400);const models=[...document.querySelectorAll('#modelList option')].map(o=>o.value);
+            const personaPrefilled=$('#persona').value.length;
+            $('#save').click();await wait(400);
+            return {models,personaPrefilled,error:$('#settingsError').hidden?'':$('#settingsError').textContent,panelHidden:$('#settings').hidden,notice:[...document.querySelectorAll('.line.notice')].map(e=>e.textContent)};
+          })()`);
+          hideBubble();await sleep(200);
+          chat.settings=brainHost.settings();delete chat.settings.usage;
+          const head=await win.webContents.executeJavaScript('(()=>{const p=window.bluefish.position(),s=window.bluefish.state.size;return {x:Math.round(p.left+s*.5),y:Math.round(p.top+s*.46)};})()');
+          const at=(x,y)=>{const r=win.getContentBounds();smokeCursor={x:r.x+Math.round(x),y:r.y+Math.round(y)};};
+          const input=(type,x,y,extra={})=>{at(x,y);win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),globalX:smokeCursor.x,globalY:smokeCursor.y,...extra});};
+          const press=async(x,y,{up=true,move=null}={})=>{
+            input('mouseMove',x,y);await sleep(80);
+            input('mouseDown',x,y,{button:'left',clickCount:1});
+            if(move){for(let i=1;i<=6;i++){await sleep(16);input('mouseMove',x+move.x*i/6,y+move.y*i/6,{button:'left'});}}
+            await sleep(60);if(up)input('mouseUp',x+(move?.x||0),y+(move?.y||0),{button:'left',clickCount:1});
+          };
+          const bubbleShown=()=>alive(bubbleWin)&&bubbleWin.isVisible()&&bubbleMode==='chat';
+          await sleep(2500);
+          chat.before=await win.webContents.executeJavaScript('(()=>{const b=window.bluefish,m=b.motion,a=m.attention.current;return {hit:b.hitTest('+head.x+','+head.y+'),sleeping:a.sleeping,woke:a.woke,wake:m.wake.active,bonk:m.touch.bonking,dip:m.touch.dip.active,active:!!b.touchInput.active};})()');
+          await press(head.x,head.y);await sleep(150);chat.openBeforeConfirm=bubbleShown();
+          chat.firstClick=await win.webContents.executeJavaScript('window.bluefish.lastClick??null');
+          await sleep(500);chat.openAfterClick=bubbleShown();
+          await sleep(200);await shot(bubbleWin.webContents,'smoke-bubble-open.png');
+          chat.bubbleBounds=bubbleWin.getBounds();chat.petBounds={...lastSet};
+          await bubbleWin.webContents.executeJavaScript('(()=>{const i=document.querySelector("#text");i.value="在吗";document.querySelector("#composer").requestSubmit();})()');
+          for(let i=0;i<80;i++){await sleep(100);const n=await bubbleWin.webContents.executeJavaScript('document.querySelectorAll(".line.her").length');if(n>=2)break;}
+          await sleep(300);
+          chat.lines=await bubbleWin.webContents.executeJavaScript('[...document.querySelectorAll(".line")].map(e=>e.className.split(" ")[1]+":"+e.textContent)');
+          await shot(bubbleWin.webContents,'smoke-bubble-reply.png');await shot(win.webContents,'smoke-pet-chat.png');
+          chat.replyBounds={bubble:bubbleWin.getBounds(),pet:win.getBounds()};
+          hideBubble();await sleep(1200);
+          await press(head.x,head.y);await sleep(130);await press(head.x,head.y);await sleep(900);
+          chat.openAfterDoubleTap=bubbleShown();hideBubble();await sleep(2500);
+          await press(head.x,head.y,{move:{x:60,y:0}});await sleep(900);
+          chat.openAfterDrag=bubbleShown();hideBubble();
+          chat.events=brainHost.history(10).map(e=>e.type+':'+e.text);
+        }
       }catch(e){evidence.error=String(e&&e.stack||e);console.error(e);}
       try{fs.writeFileSync(path.join(folder,'desktop-complete-smoke.json'),JSON.stringify(evidence,null,2));}catch(e){console.error(e);}
       app.quit();
     })();
   }
 }).catch(e=>{console.error(e);app.quit();});
-app.on('will-quit',()=>{clearInterval(timer);clearInterval(topTimer);clearTimeout(saveTimer);globalShortcut.unregisterAll();tray?.destroy();server?.close();});
+app.on('will-quit',()=>{brainHost?.stop();clearTimeout(bubbleHideTimer);clearInterval(timer);clearInterval(topTimer);clearTimeout(saveTimer);globalShortcut.unregisterAll();tray?.destroy();server?.close();});
 app.on('window-all-closed',()=>app.quit());
 }
