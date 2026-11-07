@@ -1,5 +1,6 @@
-// Chat bubble above the pet: her lines, the owner's input, and the model settings.
+// Chat bubble above the pet: her lines, the owner's input, the model settings and the WeChat link.
 import {hydrate} from './icons.mjs';
+import {qrSvg} from './qr.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const card=$('#card'),log=$('#log'),typingEl=$('#typing'),composer=$('#composer'),input=$('#text'),gear=$('#gear'),panel=$('#settings'),errorEl=$('#settingsError');
@@ -70,6 +71,33 @@ panel.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INP
 let lastFit=0;
 function fit(){const h=Math.ceil(document.querySelector('.wrap').getBoundingClientRect().height);if(h!==lastFit){lastFit=h;api.fit(h);}}
 new ResizeObserver(fit).observe(card);
+
+// ---- WeChat ----
+const wx=api.weixin||{status:async()=>({state:'off'}),connect:async()=>({state:'off'}),cancel:async()=>({}),disconnect:async()=>({}),onStatus(){}};
+const wxStatus=$('#wxStatus'),wxButton=$('#wxButton'),qrBox=$('#qr'),wxHint=$('#wxHint');
+let wxState='off',qrUrl='';
+const WX_TEXT={off:'未连接',qr:'等待扫码',scanned:'已扫码，请在手机上确认',connected:'已连接',retrying:'连接不稳，正在重试',expired:'连接过期了，请重新扫码',error:'连接失败'};
+function renderWeixin(s){
+  if(!s)return;
+  wxState=s.state||'off';
+  wxStatus.textContent=WX_TEXT[wxState]||wxState;
+  const showQr=(wxState==='qr'||wxState==='scanned')&&s.url;
+  if(showQr&&s.url!==qrUrl){qrUrl=s.url;qrBox.innerHTML=qrSvg(s.url);}
+  qrBox.hidden=!showQr;
+  wxButton.textContent=showQr?'取消':wxState==='connected'||wxState==='retrying'?'断开':'连接微信';
+  const hint=showQr?(wxState==='scanned'?'在手机微信里点确认。':'用你自己的微信扫一扫。这是腾讯官方的 ClawBot 接口，不需要小号。')
+    :wxState==='connected'&&s.canSend===false?'连上了。先在微信里给她发一句话，她才能回你。'
+    :wxState==='error'&&s.message?s.message:'';
+  wxHint.textContent=hint;wxHint.hidden=!hint;
+  fit();
+}
+wxButton.addEventListener('click',async()=>{
+  const r=wxState==='qr'||wxState==='scanned'?await wx.cancel():wxState==='connected'||wxState==='retrying'?await wx.disconnect():await wx.connect();
+  // Progress arrives through onStatus; the reply itself may already be stale.
+  if(r?.error){wxHint.textContent=r.error;wxHint.hidden=false;fit();}
+});
+wx.onStatus(renderWeixin);
+renderWeixin(await wx.status());
 
 api.onLine(addLine);
 api.onTyping(on=>{typingEl.hidden=!on;if(on)log.scrollTop=log.scrollHeight;fit();});

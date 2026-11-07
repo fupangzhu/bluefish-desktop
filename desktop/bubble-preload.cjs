@@ -12,5 +12,12 @@ contextBridge.exposeInMainWorld('bubble',{
   history:()=>ipcRenderer.invoke('bubble:history'),
   onLine:cb=>ipcRenderer.on('bubble:line',(_e,line)=>cb(line)),
   onTyping:cb=>ipcRenderer.on('bubble:typing',(_e,on)=>cb(on===true)),
-  onMode:cb=>ipcRenderer.on('bubble:mode',(_e,mode)=>cb(mode))
+  onMode:cb=>ipcRenderer.on('bubble:mode',(_e,mode)=>cb(mode)),
+  weixin:{
+    status:()=>ipcRenderer.invoke('bubble:weixin-status'),
+    connect:()=>ipcRenderer.invoke('bubble:weixin-connect'),
+    cancel:()=>ipcRenderer.invoke('bubble:weixin-cancel'),
+    disconnect:()=>ipcRenderer.invoke('bubble:weixin-disconnect'),
+    onStatus:cb=>ipcRenderer.on('bubble:weixin',(_e,s)=>cb(s))
+  }
 });

@@ -31,6 +31,13 @@ body{user-select:none;-webkit-user-select:none}
 .settings .inline{display:flex;gap:6px}.settings .inline input{flex:1;min-width:0}
 .settings .pill{border:1px solid var(--line)}
 .settings .actions{display:flex;justify-content:flex-end;gap:8px}
+.wx{display:flex;flex-direction:column;gap:6px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.wx-row{display:flex;align-items:center;gap:8px}
+.wx-title{font:600 13px/20px var(--sans);color:var(--ink)}
+.wx-row .hint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qr{align-self:center;padding:6px;border-radius:var(--r-menu);background:#fff;line-height:0}
+.qr[hidden]{display:none}
+.qr svg{width:180px;height:180px}
 .hint{margin:0;font:400 12px/18px var(--sans);color:var(--muted)}
 .hint.error{color:var(--danger)}
 @media (prefers-color-scheme:dark){

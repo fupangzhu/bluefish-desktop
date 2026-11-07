@@ -120,7 +120,8 @@ export class Brain{
       if(i>0)this.out.typing(true,channel);
       await this.clock.sleep(typingDelay(line)*1000);
       this.out.typing(false,channel);
-      this.out.say(line,channel);this.store.append({type:'said',text:line,channel});
+      try{await this.out.say(line,channel);}catch(e){this.log('say failed',e?.message);this.out.notice?.('没能发出去：'+(e?.message||e),'desktop');break;}
+      this.store.append({type:'said',text:line,channel});
     }
     result.spoke=true;
     return '说了：'+lines.join(' ');

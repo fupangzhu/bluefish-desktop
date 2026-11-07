@@ -26,7 +26,7 @@ tools/docs/     README 素材生成（抓帧 + 合成，见该目录 README）
 tools/installer/ 单文件安装包生成（C# 自解压 + 打包脚本）
 tools/build-release.ps1  一键构建全部 Windows 发布产物
 docs/           README 图片 + 发版说明
-test/           node --test 单测（当前 178 项）+ Electron 交互回归
+test/           node --test 单测（当前 184 项）+ Electron 交互回归
 ```
 
 ## 2. 环境要求
@@ -76,7 +76,7 @@ node node_modules/electron/cli.js test/touch-window.cjs
 
 此回归使用隐藏 Electron 窗口，验证 150 / 240 / 460 尺寸、贴边 / 悬浮模式、左右耳随机次数、牵拉 / 拉直 / 拉伸、抓点跟随、发根固定、萎靡 / 兴奋耳姿态、待机扑耳及失焦恢复；结果与截图在 `.test-output/touch/`。
 
-### 聊天（第一阶段，当前源码）
+### 聊天（桌面 + 微信，当前源码）
 
 设计见 `docs/superpowers/specs/2026-11-06-chat-brain-design.md`。
 
@@ -84,13 +84,14 @@ node node_modules/electron/cli.js test/touch-window.cjs
 - `src/brain/`：`debounce`（等主人说完：停 2 秒，活跃对话 5 秒，打字中顺延，单批最长 8 秒）、`brain`（规划器只能调用 reply/act/wait/stop 工具，默认沉默；说话交给回复器单独写；一轮最多 4 次调用；思考中来了新消息会重新想）、`speak`（最多 3 条、按字数打字延迟）、`prompts`（默认人设和工具定义）、`llm`（OpenAI 兼容接口）、`events`（只追加的事件流）。
 - `desktop/brain.cjs` 在主进程里调用模型。API Key 用 Electron `safeStorage` 加密保存在 `userData/brain/config.json`，从不发给渲染进程；`events.jsonl` 记录对话，`usage.json` 记当天 token，超过每日上限（默认 20 万）就不再调用模型。
 - 动作通过现有 `action` IPC 发给小鱼：点头、摇头、开心、眨眼、眨单眼、下躲、抖耳朵；睡着时只允许抖耳朵。
+- 微信（`src/brain/weixin.mjs`）：腾讯官方“微信 ClawBot”iLink Bot API（`https://ilinkai.weixin.qq.com`）。在气泡设置里点“连接微信”，用自己的微信扫码确认（二维码由 `src/qr.mjs` 生成，无第三方依赖，已与 npm `qrcode` 逐模块比对）。之后长轮询 `getupdates` 收消息，只认扫码的本人；回复按同样的分句和打字节奏经 `sendmessage` 发回，并带上最近一条消息的 `context_token`，期间用 `sendtyping` 显示“对方正在输入”。bot token 用 `safeStorage` 加密存在 `userData/brain/weixin.json`；会话过期（errcode -14）时清除凭证并在桌面提示重新扫码。微信来消息时桌面上的小鱼会抖一下耳朵，气泡不显示微信里的对话。
 - 设置在气泡的齿轮里：接口地址（默认 `https://api.deepseek.com`）、API Key、模型（可从 `/models` 获取列表，默认 `deepseek-v4-flash`）、人设、每日 token 上限。
 
 ```powershell
 node test/chat-smoke.cjs
 ```
 
-此回归启动真实桌宠和一个假的 OpenAI 兼容模型，用合成鼠标事件验证单击打开输入框、双击和拖动不会打开、她点头并分两句回话、气泡位于呆毛上方；结果与截图在 `.test-output/chat/`。
+此回归启动真实桌宠，加一个同时假扮 OpenAI 兼容模型和微信 iLink 接口的本地服务器：用合成鼠标事件验证单击打开输入框、双击和拖动不会打开、她点头并分两句回话、气泡位于呆毛上方；通过设置界面保存模型配置；点“连接微信”出现二维码、扫码确认后连上、只有主人的消息进入大脑、回复带着 `context_token` 发回微信并显示正在输入、凭证不以明文落盘。结果与截图在 `.test-output/chat/`。
 
 ## 4. 重新生成 README 素材
 

@@ -11,6 +11,11 @@
       <button class="icon-btn" id="gear" type="button" title="设置" aria-label="设置" aria-pressed="false"><span data-icon="gear"></span></button>
     </form>
     <section class="settings" id="settings" hidden aria-label="聊天设置">
+      <div class="wx" aria-label="微信">
+        <div class="wx-row"><span class="wx-title">微信</span><span class="hint" id="wxStatus">未连接</span><button class="pill" id="wxButton" type="button">连接微信</button></div>
+        <div class="qr" id="qr" hidden></div>
+        <p class="hint" id="wxHint" hidden></p>
+      </div>
       <label>接口地址<input id="baseUrl" type="url" spellcheck="false" placeholder="https://api.deepseek.com"></label>
       <label>API Key<input id="apiKey" type="password" spellcheck="false" placeholder="sk-..."></label>
       <label>模型

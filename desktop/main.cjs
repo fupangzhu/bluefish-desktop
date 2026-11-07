@@ -223,7 +223,10 @@ app.whenReady().then(async()=>{
       if(channel!=='desktop'&&!settings)return;
       showBubble(settings?'chat':'peek',{settings}).then(()=>sendBubble('bubble:line',{who:'notice',text,settings}));
     },
-    state(name){if(name==='thinking')sendPet('action','ear');}
+    state(name){if(name==='thinking')sendPet('action','ear');},
+    // A message arrived from WeChat: she perks up an ear on the desktop.
+    incoming(){sendPet('action','ear');},
+    weixinStatus(s){sendBubble('bubble:weixin',s);}
   };
 
   // ---- IPC (every sender is validated) ------------------------------------------------
@@ -270,6 +273,10 @@ app.whenReady().then(async()=>{
   ipcMain.handle('bubble:save',safely((e,patch)=>bubbleOwned(e)&&brainHost?brainHost.update(patch):null));
   ipcMain.handle('bubble:models',safely((e,patch)=>bubbleOwned(e)&&brainHost?brainHost.models(patch):[]));
   ipcMain.handle('bubble:defaults',safely(e=>bubbleOwned(e)&&brainHost?brainHost.defaults():{persona:''}));
+  ipcMain.handle('bubble:weixin-status',e=>bubbleOwned(e)&&brainHost?brainHost.weixinStatus():null);
+  ipcMain.handle('bubble:weixin-connect',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinConnect():null));
+  ipcMain.handle('bubble:weixin-cancel',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinCancel():null));
+  ipcMain.handle('bubble:weixin-disconnect',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinDisconnect():null));
   ipcMain.handle('bubble:history',e=>bubbleOwned(e)&&brainHost?brainHost.history(12).filter(x=>x.channel==='desktop').map(x=>({type:x.type,text:x.text})):[]);
 
   // ---- dragging -------------------------------------------------------------------------
@@ -329,7 +336,7 @@ app.whenReady().then(async()=>{
   globalShortcut.register('CommandOrControl+Shift+F9',toggleChat);
   win.on('closed',()=>{win=null;app.quit();});
   createMenu();
-  try{brainHost=await createBrainHost({dir:path.join(app.getPath('userData'),'brain'),safeStorage,out:brainOut}).init();}
+  try{brainHost=await createBrainHost({dir:path.join(app.getPath('userData'),'brain'),safeStorage,out:brainOut,weixinBase:SMOKE?process.env.BLUEFISH_WEIXIN_BASE:null}).init();}
   catch(e){console.error('brain init failed',e);}
   createBubble();
 
@@ -413,6 +420,27 @@ app.whenReady().then(async()=>{
           await press(head.x,head.y,{move:{x:60,y:0}});await sleep(900);
           chat.openAfterDrag=bubbleShown();hideBubble();
           chat.events=brainHost.history(10).map(e=>e.type+':'+e.text);
+          // WeChat: connect through the settings, scan (fake), then answer a message from WeChat.
+          if(process.env.BLUEFISH_WEIXIN_BASE){
+            const w=chat.weixin={};
+            await showBubble('chat');await sleep(300);
+            await bubbleWin.webContents.executeJavaScript('(()=>{if(document.querySelector("#settings").hidden)document.querySelector("#gear").click();})()');await sleep(400);
+            await bubbleWin.webContents.executeJavaScript('document.querySelector("#wxButton").click()');
+            for(let i=0;i<40;i++){await sleep(100);if(await bubbleWin.webContents.executeJavaScript('!document.querySelector("#qr").hidden'))break;}
+            w.qrShown=await bubbleWin.webContents.executeJavaScript('!document.querySelector("#qr").hidden&&!!document.querySelector("#qr svg path")');
+            w.qrStatus=await bubbleWin.webContents.executeJavaScript('document.querySelector("#wxStatus").textContent');
+            await shot(bubbleWin.webContents,'smoke-weixin-qr.png');
+            for(let i=0;i<150&&brainHost.weixinStatus().state!=='connected';i++)await sleep(100);
+            w.connected=brainHost.weixinStatus().state==='connected';
+            for(let i=0;i<150;i++){await sleep(100);if(brainHost.history(20).filter(e=>e.channel==='weixin'&&e.type==='said').length>=2)break;}
+            await sleep(300);
+            w.events=brainHost.history(20).filter(e=>e.channel==='weixin').map(e=>e.type+':weixin:'+e.text);
+            w.statusText=await bubbleWin.webContents.executeJavaScript('document.querySelector("#wxStatus").textContent');
+            await shot(bubbleWin.webContents,'smoke-weixin-connected.png');
+            const raw=fs.readFileSync(path.join(app.getPath('userData'),'brain','weixin.json'),'utf8');
+            w.tokenOnDisk=raw.includes('BOT-TOKEN');w.savedKeys=Object.keys(JSON.parse(raw)).sort();
+            hideBubble();
+          }
         }
       }catch(e){evidence.error=String(e&&e.stack||e);console.error(e);}
       try{fs.writeFileSync(path.join(folder,'desktop-complete-smoke.json'),JSON.stringify(evidence,null,2));}catch(e){console.error(e);}

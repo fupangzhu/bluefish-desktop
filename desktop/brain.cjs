@@ -6,9 +6,9 @@ const {pathToFileURL}=require('node:url');
 const DEFAULTS={baseUrl:'https://api.deepseek.com',model:'deepseek-v4-flash',cheapModel:'',persona:'',dailyTokens:200000};
 const LIMITS={persona:2000,url:300,model:120,key:400};
 
-function createBrainHost({dir,safeStorage,out,log=console.warn}){
-  const configFile=path.join(dir,'config.json'),usageFile=path.join(dir,'usage.json');
-  let config={...DEFAULTS},apiKey='',brain=null,mods=null;
+function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null}){
+  const configFile=path.join(dir,'config.json'),usageFile=path.join(dir,'usage.json'),weixinFile=path.join(dir,'weixin.json');
+  let config={...DEFAULTS},apiKey='',brain=null,mods=null,weixin=null;
   const readJson=f=>{try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch{return null;}};
   const writeJson=(f,v)=>{fs.mkdirSync(dir,{recursive:true});const tmp=f+'.tmp';fs.writeFileSync(tmp,JSON.stringify(v,null,2));fs.renameSync(tmp,f);};
 
@@ -37,10 +37,31 @@ function createBrainHost({dir,safeStorage,out,log=console.warn}){
     spend(tokens){const u=usage();u.tokens+=Math.max(0,Number(tokens)||0);u.calls+=1;try{writeJson(usageFile,u);}catch{}}
   };
 
+  // ---- WeChat credentials: the bot token is encrypted like the API key ----
+  const weixinStore={
+    load(){
+      const s=readJson(weixinFile);if(!s||typeof s.tokenEnc!=='string')return null;
+      try{return {...s,token:safeStorage.decryptString(Buffer.from(s.tokenEnc,'base64')),tokenEnc:undefined};}catch(e){log('brain: cannot decrypt WeChat token',e.message);return null;}
+    },
+    save(state){
+      if(!state){try{fs.rmSync(weixinFile,{force:true});}catch{}return;}
+      if(!safeStorage.isEncryptionAvailable())throw Error('系统加密不可用，无法安全保存微信凭证');
+      const {token,...rest}=state;writeJson(weixinFile,{...rest,tokenEnc:safeStorage.encryptString(token).toString('base64')});
+    }
+  };
+  // Lines for WeChat go out through the WeChat client; the pet still gets told so she can react.
+  const routed={
+    async say(text,channel){if(channel==='weixin')await weixin.send(text);out.say(text,channel);},
+    act:(a,channel)=>out.act(a,channel),
+    typing(on,channel){if(channel==='weixin')weixin?.typing(on);out.typing(on,channel);},
+    notice:(text,channel,o)=>out.notice(text,'desktop',o),
+    state:(name,channel)=>out.state?.(name,channel)
+  };
+
   async function init(){
     load();
     const imp=f=>import(pathToFileURL(path.join(__dirname,'..','src','brain',f)).href);
-    const [b,ev,llm]=await Promise.all([imp('brain.mjs'),imp('events.mjs'),imp('llm.mjs')]);
+    const [b,ev,llm,wx]=await Promise.all([imp('brain.mjs'),imp('events.mjs'),imp('llm.mjs'),imp('weixin.mjs')]);
     mods={llm};
     const store=new ev.EventStore(path.join(dir,'events.jsonl'));
     const call=async({role,messages,tools,signal,temperature,maxTokens})=>{
@@ -49,7 +70,11 @@ function createBrainHost({dir,safeStorage,out,log=console.warn}){
       budget.spend(res.usage?.total_tokens||0);
       return res;
     };
-    brain=new b.Brain({llm:call,store,out,budget,persona:()=>config.persona.trim(),log});
+    brain=new b.Brain({llm:call,store,out:routed,budget,persona:()=>config.persona.trim(),log});
+    weixin=new wx.WeixinClient({store:weixinStore,log,loginBase:weixinBase||wx.WEIXIN.baseUrl,
+      onMessage:text=>{out.incoming?.('weixin');brain.receive(text,'weixin');},
+      onStatus:s=>{out.weixinStatus?.(s);if(s.state==='expired')out.notice('微信连接过期了，需要重新扫码。','desktop',{settings:true});}});
+    weixin.start();
     return api;
   }
 
@@ -81,7 +106,12 @@ function createBrainHost({dir,safeStorage,out,log=console.warn}){
     receive:(text,channel)=>brain?.receive(text,channel),
     typing:()=>brain?.typing(),
     history:n=>brain?brain.store.recent(n).filter(e=>e.type==='heard'||e.type==='said'):[],
-    stop:()=>brain?.stop()
+    weixinStatus:()=>weixin?{...weixin.status,canSend:weixin.canSend()}:{state:'off'},
+    // Resolves once the QR flow ends (connected, cancelled or failed); progress comes via weixinStatus.
+    weixinConnect:()=>{weixin.login().catch(e=>log('weixin login failed',e.message));return weixin.status;},
+    weixinCancel:()=>{weixin?.cancelLogin();return weixin?.status;},
+    weixinDisconnect:()=>{weixin?.logout();return weixin?.status;},
+    stop:()=>{brain?.stop();weixin?.stop();weixin?.cancelLogin();}
   };
   return api;
 }
