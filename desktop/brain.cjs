@@ -2,13 +2,39 @@
 // the daily token budget, the event file, and the bridge between the brain and the windows.
 const fs=require('node:fs'),path=require('node:path');
 const {pathToFileURL}=require('node:url');
+// Node's fetch (the global one in the main process) resolves some hosts to unusable addresses and
+// ignores the system proxy; Chromium's net.fetch does neither. Fall back when it is missing.
+let netFetch=null;try{netFetch=require('electron').net?.fetch||null;}catch{}
+const directFetch=(url,init)=>netFetch?netFetch(url,init):fetch(url,init);
 
-const DEFAULTS={baseUrl:'https://api.deepseek.com',model:'deepseek-v4-flash',cheapModel:'',persona:'',dailyTokens:200000};
-const LIMITS={persona:2000,url:300,model:120,key:400};
+const DEFAULTS={baseUrl:'https://api.deepseek.com',model:'deepseek-flash',cheapModel:'',persona:'',dailyTokens:200000,proxy:''};
+const LIMITS={persona:2000,url:300,model:120,key:400,proxy:300};
 
-function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null}){
+// "127.0.0.1:7897" is accepted too; an empty value means a direct connection.
+// Returns the text as typed so credentials survive, and throws for anything unusable.
+function normalizeProxy(raw){
+  const text=String(raw||'').trim();
+  if(!text)return '';
+  let url;try{url=new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text)?text:'http://'+text);}catch{throw Error('代理地址看不懂，示例：http://127.0.0.1:7897');}
+  if(url.protocol!=='http:'&&url.protocol!=='https:')throw Error('代理只支持 http:// 或 https://');
+  if(!url.hostname)throw Error('代理地址缺少主机名');
+  return text;
+}
+
+function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null,tools=null}){
   const configFile=path.join(dir,'config.json'),usageFile=path.join(dir,'usage.json'),weixinFile=path.join(dir,'weixin.json');
   let config={...DEFAULTS},apiKey='',brain=null,mods=null,weixin=null;
+  // The built-in fetch ignores the system proxy, so a configured proxy is tunnelled explicitly.
+  // Cached per proxy string: settings can change while the app runs.
+  let fetchCache={key:null,fn:directFetch};
+  const fetchFor=proxy=>{
+    const key=proxy===undefined?config.proxy:proxy;
+    if(key===fetchCache.key)return fetchCache.fn;
+    let fn=directFetch;
+    if(key){try{fn=mods.proxy.makeFetch(key);}catch(e){log('brain: bad proxy, using a direct connection',e.message);}}
+    fetchCache={key,fn};
+    return fn;
+  };
   const readJson=f=>{try{return JSON.parse(fs.readFileSync(f,'utf8'));}catch{return null;}};
   const writeJson=(f,v)=>{fs.mkdirSync(dir,{recursive:true});const tmp=f+'.tmp';fs.writeFileSync(tmp,JSON.stringify(v,null,2));fs.renameSync(tmp,f);};
 
@@ -61,17 +87,34 @@ function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null})
   async function init(){
     load();
     const imp=f=>import(pathToFileURL(path.join(__dirname,'..','src','brain',f)).href);
-    const [b,ev,llm,wx]=await Promise.all([imp('brain.mjs'),imp('events.mjs'),imp('llm.mjs'),imp('weixin.mjs')]);
-    mods={llm};
+    const [b,ev,llm,wx,proxy]=await Promise.all([imp('brain.mjs'),imp('events.mjs'),imp('llm.mjs'),imp('weixin.mjs'),imp('proxy.mjs')]);
+    mods={llm,proxy};
     const store=new ev.EventStore(path.join(dir,'events.jsonl'));
-    const call=async({role,messages,tools,signal,temperature,maxTokens})=>{
+    const call=async({role,messages,tools,signal,temperature,maxTokens,thinking=null})=>{
       const model=role==='cheap'&&config.cheapModel?config.cheapModel:config.model;
-      const res=await llm.chat({baseUrl:config.baseUrl,apiKey,model,messages,tools,signal,temperature,maxTokens});
+      const res=await llm.chat({baseUrl:config.baseUrl,apiKey,model,messages,tools,signal,temperature,maxTokens,thinking,fetchImpl:fetchFor()});
       budget.spend(res.usage?.total_tokens||0);
       return res;
     };
-    brain=new b.Brain({llm:call,store,out:routed,budget,persona:()=>config.persona.trim(),log});
+    // Look at the screen with the vision model: one image, one question, a short answer.
+    // The screenshot leaves the machine for the model provider, so it only runs when she asks.
+    const see=async({question='',app=''}={})=>{
+      if(!tools?.capture)throw Error('这台电脑上现在没有截图能力');
+      const shot=await tools.capture(app?{app}:{});
+      const q=String(question||'').trim().slice(0,300)||'屏幕上现在是什么？用一两句话说说。';
+      const res=await llm.chat({baseUrl:config.baseUrl,apiKey,model:config.model,fetchImpl:fetchFor(),maxTokens:700,temperature:.3,thinking:{type:'disabled'},
+        messages:[{role:'user',content:[
+          {type:'text',text:q},
+          {type:'image_url',image_url:{url:shot.dataUrl,detail:'high'}}
+        ]}]});
+      budget.spend(res.usage?.total_tokens||0);
+      const text=String(res.content||'').trim().slice(0,1200);
+      return {text:text||'（看图没说出什么）',path:shot.path};
+    };
+    const deskTools=tools?{...tools,see}:{see};
+    brain=new b.Brain({llm:call,store,out:routed,budget,persona:()=>config.persona.trim(),log,tools:deskTools});
     weixin=new wx.WeixinClient({store:weixinStore,log,loginBase:weixinBase||wx.WEIXIN.baseUrl,
+      fetchImpl:(url,init)=>fetchFor()(url,init),
       onMessage:text=>{out.incoming?.('weixin');brain.receive(text,'weixin');},
       onStatus:s=>{out.weixinStatus?.(s);if(s.state==='expired')out.notice('微信连接过期了，需要重新扫码。','desktop',{settings:true});}});
     weixin.start();
@@ -90,6 +133,8 @@ function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null})
     const cheap=str(patch.cheapModel,LIMITS.model);if(cheap!==undefined)config.cheapModel=cheap;
     if(typeof patch.persona==='string')config.persona=patch.persona.slice(0,LIMITS.persona);
     if(Number.isFinite(patch.dailyTokens))config.dailyTokens=Math.max(0,Math.min(5e6,Math.round(patch.dailyTokens)));
+    const proxy=str(patch.proxy,LIMITS.proxy);
+    if(proxy!==undefined){config.proxy=proxy?normalizeProxy(proxy):'';}
     const key=str(patch.apiKey,LIMITS.key);if(key)apiKey=key;
     if(patch.clearKey===true)apiKey='';
     save();
@@ -98,7 +143,8 @@ function createBrainHost({dir,safeStorage,out,log=console.warn,weixinBase=null})
   async function models(patch){
     const base=typeof patch?.baseUrl==='string'&&patch.baseUrl.trim()?patch.baseUrl.trim():config.baseUrl;
     const key=typeof patch?.apiKey==='string'&&patch.apiKey.trim()?patch.apiKey.trim():apiKey;
-    return mods.llm.listModels({baseUrl:base,apiKey:key});
+    const proxy=typeof patch?.proxy==='string'&&patch.proxy.trim()?normalizeProxy(patch.proxy.trim()):config.proxy;
+    return mods.llm.listModels({baseUrl:base,apiKey:key,fetchImpl:fetchFor(proxy)});
   }
   const api={
     init,settings,update,models,

@@ -38,13 +38,20 @@ test('debounce waits for quiet, holds while typing, and never exceeds the batch 
 });
 
 // ---- prompts -----------------------------------------------------------------------------------
-test('planner exposes reply, act, wait and stop with the gesture list',()=>{
+test('planner exposes the chat and desktop tools with the gesture list',()=>{
   const tools=plannerTools().map(t=>t.function.name);
-  assert.deepEqual(tools,['reply','act','wait','stop']);
+  assert.deepEqual(tools,['reply','act','wait','screenshot','look','see','stop']);
   const act=plannerTools()[1].function.parameters.properties.action;
   assert.deepEqual(act.enum,Object.keys(ACTIONS));
   const text=situation({now:Date.UTC(2026,10,6,12),channel:'desktop',history:[],fresh:[{type:'heard',ts:Date.UTC(2026,10,6,12),text:'在吗'}]});
   assert.match(text,/【新消息】\n主人 \d\d:\d\d：在吗/);
+});
+test('a mixed conversation says which channel each line came from',()=>{
+  const mixed=situation({now:Date.UTC(2026,10,6,12),channel:'desktop',history:[{type:'said',ts:Date.UTC(2026,10,6,11),text:'微信里的',channel:'weixin'}],fresh:[{type:'heard',ts:Date.UTC(2026,10,6,12),text:'在吗',channel:'desktop'}]});
+  assert.match(mixed,/你（微信） \d\d:\d\d：微信里的/);
+  assert.match(mixed,/主人 \d\d:\d\d：在吗/);
+  const single=situation({now:Date.UTC(2026,10,6,12),channel:'desktop',history:[],fresh:[{type:'heard',ts:Date.UTC(2026,10,6,12),text:'在吗',channel:'desktop'}]});
+  assert.doesNotMatch(single,/（微信）/);
 });
 test('model tool-call arguments are parsed defensively',()=>{
   assert.deepEqual(parseArgs('{"a":1}'),{a:1});
@@ -140,6 +147,56 @@ test('replies go back to the channel the message came from',async()=>{
   const {brain,log}=rig([{content:'',toolCalls:[call('reply',{reference:'x'})]},{content:'好的。',toolCalls:[]}]);
   brain.receive('hello','weixin');await brain.settle();
   assert.deepEqual(log,[['say','好的。','weixin']]);
+});
+test('a message from another channel waits for the running turn and is answered on its own channel',async()=>{
+  let brainRef;
+  const {brain,log}=rig([
+    ()=>{brainRef.receive('微信那边','weixin');return {content:'',toolCalls:[call('reply',{reference:'桌面'})]};},
+    {content:'桌面的回复。',toolCalls:[]},
+    {content:'',toolCalls:[call('reply',{reference:'微信'})]},
+    {content:'微信的回复。',toolCalls:[]}
+  ]);brainRef=brain;
+  brain.receive('桌面这边');await brain.settle();await brain.settle();
+  assert.deepEqual(log,[['say','桌面的回复。','desktop'],['say','微信的回复。','weixin']]);
+});
+test('a desktop tool runs, is recorded, and reports its result back to her',async()=>{
+  const {brain,requests,store}=rig([
+    {content:'',toolCalls:[call('screenshot',{app:'chrome.exe'})]},
+    {content:'',toolCalls:[call('reply',{reference:'说文件路径'})]},
+    {content:'截好了。',toolCalls:[]}
+  ]);
+  const seen=[];
+  brain.tools={screenshot:async args=>{seen.push(args);return {text:'截图好了（chrome.exe），存在 C:/shots/a.png'};}};
+  brain.receive('截个图');await brain.settle();
+  assert.deepEqual(seen,[{app:'chrome.exe'}],'the app argument is passed through, nothing else');
+  const tool=requests[1].messages.find(m=>m.role==='tool');
+  assert.match(tool.content,/C:\/shots\/a\.png/);
+  assert.ok(store.recent(10).some(e=>e.type==='acted'&&e.action==='screenshot'));
+});
+test('a missing tool or a failing one is reported honestly',async()=>{
+  const {brain,requests}=rig([
+    {content:'',toolCalls:[call('look',{})]},
+    {content:'',toolCalls:[call('screenshot',{})]},
+    {content:'',toolCalls:[call('stop')]}
+  ]);
+  brain.tools={look:async()=>{throw Error('agent-desktop 超时');}};
+  brain.receive('看看屏幕');await brain.settle();
+  const tools=requests[1].messages.filter(m=>m.role==='tool').map(m=>m.content);
+  assert.match(tools[0],/没做成：agent-desktop 超时/);
+  assert.match(tools[1],/没有这个能力/);
+});
+test('see passes the question and the target app through, then reports the answer',async()=>{
+  const {brain,requests}=rig([
+    {content:'',toolCalls:[call('see',{question:'这个报错是什么',app:'chrome.exe'})]},
+    {content:'',toolCalls:[call('reply',{reference:'解释报错'})]},
+    {content:'它说找不到文件。',toolCalls:[]}
+  ]);
+  const seen=[];
+  brain.tools={see:async args=>{seen.push(args);return {text:'截图里是一个 FileNotFound 报错'};}};
+  brain.receive('看下这个报错');await brain.settle();
+  assert.deepEqual(seen,[{app:'chrome.exe',question:'这个报错是什么'}]);
+  const tool=requests[1].messages.find(m=>m.role==='tool');
+  assert.match(tool.content,/FileNotFound/);
 });
 test('an exhausted daily budget stops the model from being called',async()=>{
   const {brain,requests,log,store}=rig([]);

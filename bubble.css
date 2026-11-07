@@ -11,6 +11,8 @@ body{user-select:none;-webkit-user-select:none}
 .line.me{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:5px}
 .line.notice{align-self:center;max-width:100%;background:none;color:var(--muted);font-size:12px;line-height:18px;text-align:center;padding:0 4px}
 .line.notice button{color:var(--ink);text-decoration:underline;font-size:12px}
+.line .from{display:inline-block;margin-right:6px;padding:0 5px;border-radius:5px;background:var(--card);color:var(--ink-2);font:500 11px/17px var(--sans);vertical-align:1px}
+.line.me .from{background:rgb(255 255 255 / 24%);color:#fff}
 .typing{align-self:flex-start;display:flex;gap:4px;padding:9px 12px;border-radius:14px;background:var(--fill)}
 .typing[hidden]{display:none}
 .typing i{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:dot 1s ease-in-out infinite}

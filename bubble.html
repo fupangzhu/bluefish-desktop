@@ -16,10 +16,15 @@
         <div class="qr" id="qr" hidden></div>
         <p class="hint" id="wxHint" hidden></p>
       </div>
+      <div class="wx" aria-label="网站登录">
+        <div class="wx-row"><span class="wx-title">B站</span><span class="hint" id="siteStatus">未登录</span><button class="pill" id="siteButton" type="button">扫码登录</button></div>
+        <p class="hint" id="siteHint" hidden></p>
+      </div>
       <label>接口地址<input id="baseUrl" type="url" spellcheck="false" placeholder="https://api.deepseek.com"></label>
+      <label>代理（可选）<input id="proxy" type="text" spellcheck="false" placeholder="http://127.0.0.1:7897"></label>
       <label>API Key<input id="apiKey" type="password" spellcheck="false" placeholder="sk-..."></label>
       <label>模型
-        <span class="inline"><input id="model" list="modelList" spellcheck="false" placeholder="deepseek-v4-flash"><button class="pill" id="fetchModels" type="button">获取列表</button></span>
+        <span class="inline"><input id="model" list="modelList" spellcheck="false" placeholder="deepseek-flash"><button class="pill" id="fetchModels" type="button">获取列表</button></span>
         <datalist id="modelList"></datalist>
       </label>
       <label>人设<textarea id="persona" rows="5" maxlength="2000"></textarea></label>

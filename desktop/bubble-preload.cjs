@@ -19,5 +19,11 @@ contextBridge.exposeInMainWorld('bubble',{
     cancel:()=>ipcRenderer.invoke('bubble:weixin-cancel'),
     disconnect:()=>ipcRenderer.invoke('bubble:weixin-disconnect'),
     onStatus:cb=>ipcRenderer.on('bubble:weixin',(_e,s)=>cb(s))
+  },
+  site:{
+    status:key=>ipcRenderer.invoke('bubble:site-status',key),
+    login:key=>ipcRenderer.invoke('bubble:site-login',key),
+    logout:key=>ipcRenderer.invoke('bubble:site-logout',key),
+    onStatus:cb=>ipcRenderer.on('bubble:site',(_e,s)=>cb(s))
   }
 });

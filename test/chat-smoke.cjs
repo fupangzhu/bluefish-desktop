@@ -27,6 +27,12 @@ const server=http.createServer((req,res)=>{
   let body='';req.on('data',c=>body+=c);req.on('end',()=>{
     const send=v=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(v));};
     if(req.url.startsWith('/ilink/'))return ilink(req.url,body?JSON.parse(body):{},send);
+    if(req.url==='/site-login'){
+      res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
+      return res.end('<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px sans-serif">'+
+        '<p>扫码登录（模拟）</p><div id="qr" style="width:200px;height:200px;background:#111"></div>'+
+        '<script>setTimeout(()=>{document.cookie="SESSDATA=fake-session; path=/";},700)</script>');
+    }
     if(req.url==='/models')return send({data:[{id:'fake-model'}]});
     const json=JSON.parse(body||'{}');requests.push({auth:req.headers.authorization,model:json.model,tools:(json.tools||[]).map(t=>t.function.name),last:json.messages?.at(-1)?.content});
     if(json.tools)return send({choices:[{message:{content:'',tool_calls:[
@@ -37,7 +43,7 @@ const server=http.createServer((req,res)=>{
 });
 server.listen(0,'127.0.0.1',()=>{
   base='http://127.0.0.1:'+server.address().port;
-  const env={...process.env,BLUEFISH_SMOKE:'1',BLUEFISH_SMOKE_DIR:out,BLUEFISH_USER_DATA:path.join(out,'profile'),BLUEFISH_SMOKE_CHAT:base,BLUEFISH_WEIXIN_BASE:base};
+  const env={...process.env,BLUEFISH_SMOKE:'1',BLUEFISH_SMOKE_DIR:out,BLUEFISH_USER_DATA:path.join(out,'profile'),BLUEFISH_SMOKE_CHAT:base,BLUEFISH_WEIXIN_BASE:base,BLUEFISH_SITE_BASE:base};
   delete env.ELECTRON_RUN_AS_NODE;
   const child=spawn(process.execPath,[path.join(root,'node_modules/electron/cli.js'),root],{env,stdio:'inherit'});
   const kill=setTimeout(()=>{child.kill();},90000);
@@ -57,7 +63,16 @@ server.listen(0,'127.0.0.1',()=>{
     assert.deepEqual(wx.sent.map(s=>s.text),['在呢。','今天怎么啦？'],'her lines go back over WeChat');
     assert.ok(wx.sent.every(s=>s.ctx==='CTX-SMOKE'&&s.to==='owner@im.wechat'));
     assert.ok(wx.typing.includes(1),'typing indicator shown in WeChat');
+    assert.ok(w.bubbleLines.some(t=>t.includes('微信')),'a WeChat line reaches the desktop bubble with its channel tag');
+    assert.ok(w.bubbleLines.some(t=>t.includes('在呢。')),'her WeChat reply is visible on the desktop');
     assert.equal(w.tokenOnDisk,false,'the bot token is never stored in plain text');
+    // Site login: the login window sets the session cookie, the bubble follows the state.
+    const s=chat.site;
+    assert.ok(s,'site section ran');
+    assert.equal(s.before,'未登录','a site starts logged out');
+    assert.equal(s.state,'connected','scanning the login page connects the site');
+    assert.equal(s.after,'已登录','the bubble shows the connected state');
+    assert.equal(s.afterLogout,'off','logging out clears the site session');
     assert.ok(!ev.error,ev.error);
     assert.equal(chat.settings.hasKey,true);
     assert.equal(chat.openBeforeConfirm,false,'the bubble waits out the double-tap window');
@@ -65,7 +80,7 @@ server.listen(0,'127.0.0.1',()=>{
     assert.deepEqual(chat.lines.filter(l=>!l.startsWith('notice')),['me:在吗','her:在呢。','her:今天怎么啦？']);
     assert.equal(chat.openAfterDoubleTap,false,'a double tap is not a chat click');
     assert.equal(chat.openAfterDrag,false,'a drag is not a chat click');
-    assert.equal(requests[0].auth,'Bearer smoke-key');assert.deepEqual(requests[0].tools,['reply','act','wait','stop']);
+    assert.equal(requests[0].auth,'Bearer smoke-key');assert.deepEqual(requests[0].tools,['reply','act','wait','screenshot','look','see','stop']);
     assert.ok(chat.bubbleBounds.y+chat.bubbleBounds.height<=chat.petBounds.y+chat.petBounds.height,'bubble sits above the pet');
     console.log('chat smoke passed');
   });

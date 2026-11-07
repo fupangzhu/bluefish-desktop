@@ -3,6 +3,8 @@ const path=require('node:path'),fs=require('node:fs');
 const {createDrag,dragBounds}=require('./drag.cjs');
 const dock=require('./dock.cjs');
 const {createBrainHost}=require('./brain.cjs');
+const {createSiteHost,SITES}=require('./sites.cjs');
+const {createDeskTools}=require('./tools.cjs');
 app.setName('Bluefish Complete');
 app.setAppUserModelId('com.fupangzhu.bluefish');
 const APP_ICON=path.join(__dirname,'../assets/icon.ico');
@@ -15,7 +17,8 @@ const PET_ACTIONS=new Set(['nod','shakehead','happy','wink','blink','dip','ear']
 const SMOKE=process.env.BLUEFISH_SMOKE==='1';
 const alive=w=>!!w&&!w.isDestroyed();
 const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
-let win,menuWin,bubbleWin,brainHost,server,timer,topTimer,drag=null,tray,saveTimer;
+let win,menuWin,bubbleWin,brainHost,siteHost,server,timer,topTimer,drag=null,tray,saveTimer;
+const siteStatusLog=[];
 let bubbleHeight=120,bubbleMode=null,bubbleHideTimer=null,bubbleActiveAt=0;
 // The smoke test drives synthetic input events, so it also stands in for the cursor they imply.
 let smokeCursor=null;
@@ -211,14 +214,15 @@ app.whenReady().then(async()=>{
   function openChat(){showBubble('chat');}
   function toggleChat(){if(bubbleMode==='chat'&&alive(bubbleWin)&&bubbleWin.isVisible())hideBubble();else openChat();}
   const sendBubble=(channel,payload)=>{if(alive(bubbleWin))bubbleWin.webContents.send(channel,payload);};
-  // Only the desktop channel shows text in the bubble; other channels just make her react.
+  // Every channel shows in the bubble; a line that did not come from the bubble carries its channel
+  // so the desktop owner can tell a WeChat answer from their own conversation.
   const brainOut={
     say(text,channel){
-      if(channel!=='desktop'){sendPet('action','ear');return;}
-      showBubble('peek').then(()=>sendBubble('bubble:line',{who:'her',text}));
+      if(channel&&channel!=='desktop')sendPet('action','ear');
+      showBubble('peek').then(()=>sendBubble('bubble:line',{who:'her',text,channel:channel||'desktop'}));
     },
     act(action,channel){if(PET_ACTIONS.has(action))sendPet('action',action);},
-    typing(on,channel){if(channel==='desktop')sendBubble('bubble:typing',!!on);},
+    typing(on,channel){sendBubble('bubble:typing',!!on);},
     notice(text,channel,{settings=false}={}){
       if(channel!=='desktop'&&!settings)return;
       showBubble(settings?'chat':'peek',{settings}).then(()=>sendBubble('bubble:line',{who:'notice',text,settings}));
@@ -277,7 +281,11 @@ app.whenReady().then(async()=>{
   ipcMain.handle('bubble:weixin-connect',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinConnect():null));
   ipcMain.handle('bubble:weixin-cancel',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinCancel():null));
   ipcMain.handle('bubble:weixin-disconnect',safely(e=>bubbleOwned(e)&&brainHost?brainHost.weixinDisconnect():null));
-  ipcMain.handle('bubble:history',e=>bubbleOwned(e)&&brainHost?brainHost.history(12).filter(x=>x.channel==='desktop').map(x=>({type:x.type,text:x.text})):[]);
+  ipcMain.handle('bubble:history',e=>bubbleOwned(e)&&brainHost?brainHost.history(16).map(x=>({type:x.type,text:x.text,channel:x.channel||'desktop'})):[]);
+  // Sites: the login window itself is opened here, the bubble only shows the state.
+  ipcMain.handle('bubble:site-status',safely(async(e,key)=>bubbleOwned(e)&&siteHost?siteHost.status(String(key)):null));
+  ipcMain.handle('bubble:site-login',safely(async(e,key)=>bubbleOwned(e)&&siteHost?siteHost.login(String(key)):null));
+  ipcMain.handle('bubble:site-logout',safely(async(e,key)=>bubbleOwned(e)&&siteHost?siteHost.logout(String(key)):null));
 
   // ---- dragging -------------------------------------------------------------------------
   function undock(p){
@@ -336,8 +344,18 @@ app.whenReady().then(async()=>{
   globalShortcut.register('CommandOrControl+Shift+F9',toggleChat);
   win.on('closed',()=>{win=null;app.quit();});
   createMenu();
-  try{brainHost=await createBrainHost({dir:path.join(app.getPath('userData'),'brain'),safeStorage,out:brainOut,weixinBase:SMOKE?process.env.BLUEFISH_WEIXIN_BASE:null}).init();}
+  // Her hands: screenshot and read-the-window through the agent-desktop CLI (resolved once).
+  const deskBin=path.join(process.env.APPDATA||'', 'npm','node_modules','agent-desktop','bin','agent-desktop-win32-x64.exe');
+  let deskTools=null;
+  try{deskTools=await createDeskTools({bin:deskBin,shotDir:path.join(app.getPath('pictures'),'小鱼截图'),log:console.warn});}
+  catch(e){console.error('desk tools init failed',e);}
+  try{brainHost=await createBrainHost({dir:path.join(app.getPath('userData'),'brain'),safeStorage,out:brainOut,weixinBase:SMOKE?process.env.BLUEFISH_WEIXIN_BASE:null,tools:deskTools}).init();}
   catch(e){console.error('brain init failed',e);}
+  // Scan-code logins (B站, ...) keep their own persistent partitions; the smoke points them at a
+  // local page instead of the real site.
+  const siteBase=SMOKE?process.env.BLUEFISH_SITE_BASE:null;
+  const siteDefs=Object.fromEntries(Object.entries(SITES).map(([k,v])=>[k,siteBase?{...v,login:siteBase+'/site-login',home:siteBase+'/'}:v]));
+  siteHost=createSiteHost({sites:siteDefs,out:(key,st)=>{siteStatusLog.push({key,state:st.state});sendBubble('bubble:site',{key,...st});},log:console.warn});
   createBubble();
 
   // ---- smoke ---------------------------------------------------------------------------------
@@ -436,9 +454,30 @@ app.whenReady().then(async()=>{
             await sleep(300);
             w.events=brainHost.history(20).filter(e=>e.channel==='weixin').map(e=>e.type+':weixin:'+e.text);
             w.statusText=await bubbleWin.webContents.executeJavaScript('document.querySelector("#wxStatus").textContent');
+            // The desktop bubble is open, so her WeChat lines should have landed there with a tag.
+            w.bubbleLines=await bubbleWin.webContents.executeJavaScript('[...document.querySelectorAll(".line.her")].map(e=>e.textContent)');
             await shot(bubbleWin.webContents,'smoke-weixin-connected.png');
             const raw=fs.readFileSync(path.join(app.getPath('userData'),'brain','weixin.json'),'utf8');
             w.tokenOnDisk=raw.includes('BOT-TOKEN');w.savedKeys=Object.keys(JSON.parse(raw)).sort();
+            hideBubble();
+          }
+          // Sites: the scan-code login opens the site's own page; a local one sets the cookie here.
+          if(process.env.BLUEFISH_SITE_BASE){
+            const s=chat.site={};
+            const siteText=()=>bubbleWin.webContents.executeJavaScript('document.querySelector("#siteStatus").textContent');
+            await showBubble('chat');await sleep(300);
+            await bubbleWin.webContents.executeJavaScript('(()=>{if(document.querySelector("#settings").hidden)document.querySelector("#gear").click();})()');await sleep(300);
+            s.before=await siteText();
+            await bubbleWin.webContents.executeJavaScript('document.querySelector("#siteButton").click()');
+            // Wait for the host's own status event (the sample loop runs once a second), then the label.
+            for(let i=0;i<120;i++){await sleep(100);if(siteStatusLog.some(x=>x.state==='connected'))break;}
+            for(let i=0;i<40;i++){s.after=await siteText();if(s.after==='已登录')break;await sleep(100);}
+            s.state=(await siteHost.status('bilibili')).state;
+            s.sent=siteStatusLog.slice();
+            await shot(bubbleWin.webContents,'smoke-site-login.png');
+            await bubbleWin.webContents.executeJavaScript('document.querySelector("#siteButton").click()');
+            for(let i=0;i<80;i++){await sleep(100);if(siteStatusLog.filter(x=>x.state==='off').length>0&&(await siteHost.status('bilibili')).state==='off')break;}
+            s.afterLogout=(await siteHost.status('bilibili')).state;
             hideBubble();
           }
         }
@@ -448,6 +487,6 @@ app.whenReady().then(async()=>{
     })();
   }
 }).catch(e=>{console.error(e);app.quit();});
-app.on('will-quit',()=>{brainHost?.stop();clearTimeout(bubbleHideTimer);clearInterval(timer);clearInterval(topTimer);clearTimeout(saveTimer);globalShortcut.unregisterAll();tray?.destroy();server?.close();});
+app.on('will-quit',()=>{brainHost?.stop();siteHost?.dispose();clearTimeout(bubbleHideTimer);clearInterval(timer);clearInterval(topTimer);clearTimeout(saveTimer);globalShortcut.unregisterAll();tray?.destroy();server?.close();});
 app.on('window-all-closed',()=>app.quit());
 }

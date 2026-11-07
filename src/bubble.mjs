@@ -4,16 +4,21 @@ import {qrSvg} from './qr.mjs';
 hydrate();
 const $=s=>document.querySelector(s);
 const card=$('#card'),log=$('#log'),typingEl=$('#typing'),composer=$('#composer'),input=$('#text'),gear=$('#gear'),panel=$('#settings'),errorEl=$('#settingsError');
-const fields={baseUrl:$('#baseUrl'),apiKey:$('#apiKey'),model:$('#model'),persona:$('#persona'),dailyTokens:$('#dailyTokens')};
+const fields={baseUrl:$('#baseUrl'),proxy:$('#proxy'),apiKey:$('#apiKey'),model:$('#model'),persona:$('#persona'),dailyTokens:$('#dailyTokens')};
 // Without the Electron bridge (plain browser preview) the bubble still renders against a stub.
 const api=window.bubble||{send(t){addLine({who:'me',text:t});setTimeout(()=>addLine({who:'her',text:'（预览模式，没有连接大脑）'}),400);},typing(){},close(){},fit(){},
-  settings:async()=>({baseUrl:'https://api.deepseek.com',model:'deepseek-v4-flash',persona:'',dailyTokens:200000,hasKey:false,usage:{tokens:0}}),
+  settings:async()=>({baseUrl:'https://api.deepseek.com',proxy:'',model:'deepseek-v4-flash',persona:'',dailyTokens:200000,hasKey:false,usage:{tokens:0}}),
   save:async p=>p,models:async()=>[],defaults:async()=>({persona:''}),history:async()=>[],onLine(){},onTyping(){},onMode(){}};
 const MAX_LINES=8;
 let mode='chat',defaultPersona='';
 
-function addLine({who,text,settings}){
-  const el=document.createElement('div');el.className='line '+who;el.textContent=text;
+const CHANNEL_LABEL={weixin:'微信',qq:'QQ'};
+function addLine({who,text,settings,channel}){
+  const el=document.createElement('div');
+  const from=who==='notice'?'':(CHANNEL_LABEL[channel]||(channel&&channel!=='desktop'?channel:''));
+  el.className='line '+who+(from?' other':'');
+  if(from){const tag=document.createElement('span');tag.className='from';tag.textContent=from;el.append(tag);}
+  el.append(document.createTextNode(text));
   if(who==='notice'&&settings){const b=document.createElement('button');b.type='button';b.textContent='打开设置';b.addEventListener('click',()=>showSettings(true));el.append(' ',b);}
   log.append(el);
   while(log.children.length>MAX_LINES)log.firstElementChild.remove();
@@ -30,7 +35,7 @@ async function showSettings(on){
   panel.hidden=!on;gear.setAttribute('aria-pressed',String(on));errorEl.hidden=true;
   if(on){
     const s=await api.settings();
-    fields.baseUrl.value=s.baseUrl||'';fields.model.value=s.model||'';fields.persona.value=s.persona||defaultPersona;fields.dailyTokens.value=s.dailyTokens??200000;
+    fields.baseUrl.value=s.baseUrl||'';fields.proxy.value=s.proxy||'';fields.model.value=s.model||'';fields.persona.value=s.persona||defaultPersona;fields.dailyTokens.value=s.dailyTokens??200000;
     fields.apiKey.value='';fields.apiKey.placeholder=s.hasKey?'已保存（留空不改）':'sk-...';
     $('#usage').textContent=`今天已用 ${s.usage?.tokens??0} token`+(s.encryption===false?' · 系统加密不可用，无法保存密钥':'');
   }
@@ -49,7 +54,7 @@ $('#resetPersona').addEventListener('click',()=>{fields.persona.value=defaultPer
 $('#fetchModels').addEventListener('click',async()=>{
   showError('');
   try{
-    const list=await api.models({baseUrl:fields.baseUrl.value,apiKey:fields.apiKey.value});
+    const list=await api.models({baseUrl:fields.baseUrl.value,apiKey:fields.apiKey.value,proxy:fields.proxy.value});
     if(list?.error)throw Error(list.error);
     const dl=$('#modelList');dl.replaceChildren(...list.map(id=>{const o=document.createElement('option');o.value=id;return o;}));
     showError(list.length?'':'接口没有返回模型');if(list.length)$('#usage').textContent=`可用模型：${list.join('、')}`;fit();
@@ -58,7 +63,7 @@ $('#fetchModels').addEventListener('click',async()=>{
 $('#save').addEventListener('click',async()=>{
   showError('');
   const persona=fields.persona.value.trim();
-  const patch={baseUrl:fields.baseUrl.value,model:fields.model.value,persona:persona===defaultPersona.trim()?'':persona,dailyTokens:Number(fields.dailyTokens.value)};
+  const patch={baseUrl:fields.baseUrl.value,proxy:fields.proxy.value,model:fields.model.value,persona:persona===defaultPersona.trim()?'':persona,dailyTokens:Number(fields.dailyTokens.value)};
   if(fields.apiKey.value.trim())patch.apiKey=fields.apiKey.value.trim();
   const r=await api.save(patch);
   if(r?.error)return showError(r.error);
@@ -99,9 +104,36 @@ wxButton.addEventListener('click',async()=>{
 wx.onStatus(renderWeixin);
 renderWeixin(await wx.status());
 
+// ---- sites (scan-code login) ----
+// The login page opens as its own window (native QR size); the bubble only reports the state.
+const site=api.site||{status:async()=>({state:'off'}),login:async()=>({}),logout:async()=>({}),onStatus(){}};
+const SITE_ID='bilibili';
+const SITE_TEXT={off:'未登录',waiting:'等待扫码',connected:'已登录',timeout:'扫码超时',error:'登录失败'};
+const siteStatus=$('#siteStatus'),siteButton=$('#siteButton'),siteHint=$('#siteHint');
+let siteState='off';
+function renderSite(s){
+  if(!s)return;
+  siteState=s.state||'off';
+  siteStatus.textContent=SITE_TEXT[siteState]||siteState;
+  siteButton.textContent=siteState==='connected'?'退出登录':siteState==='waiting'?'取消':'扫码登录';
+  const hint=siteState==='waiting'?'在弹出的窗口里用手机扫码；扫完窗口会自己关掉。'
+    :siteState==='connected'?'已登录。之后她可以在你允许的范围内只读地看内容。'
+    :siteState==='timeout'?'这次没扫上，再点一次就行。'
+    :siteState==='error'&&s.message?s.message:'';
+  siteHint.textContent=hint;siteHint.hidden=!hint;
+  fit();
+}
+siteButton.addEventListener('click',async()=>{
+  const r=siteState==='connected'||siteState==='waiting'?await site.logout(SITE_ID):await site.login(SITE_ID);
+  if(r?.error){siteHint.textContent=r.error;siteHint.hidden=false;fit();}
+});
+site.onStatus(s=>{if(!s||!s.key||s.key===SITE_ID)renderSite(s);});
+// Not awaited: the page must finish loading even if the main process is slow to answer.
+site.status(SITE_ID).then(renderSite).catch(()=>{});
+
 api.onLine(addLine);
 api.onTyping(on=>{typingEl.hidden=!on;if(on)log.scrollTop=log.scrollHeight;fit();});
 api.onMode(setMode);
 defaultPersona=(await api.defaults()).persona||'';
-for(const e of (await api.history()).slice(-4))addLine({who:e.type==='heard'?'me':'her',text:e.text});
+for(const e of (await api.history()).slice(-6))addLine({who:e.type==='heard'?'me':'her',text:e.text,channel:e.channel});
 fit();

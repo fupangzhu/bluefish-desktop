@@ -84,14 +84,18 @@ node node_modules/electron/cli.js test/touch-window.cjs
 - `src/brain/`：`debounce`（等主人说完：停 2 秒，活跃对话 5 秒，打字中顺延，单批最长 8 秒）、`brain`（规划器只能调用 reply/act/wait/stop 工具，默认沉默；说话交给回复器单独写；一轮最多 4 次调用；思考中来了新消息会重新想）、`speak`（最多 3 条、按字数打字延迟）、`prompts`（默认人设和工具定义）、`llm`（OpenAI 兼容接口）、`events`（只追加的事件流）。
 - `desktop/brain.cjs` 在主进程里调用模型。API Key 用 Electron `safeStorage` 加密保存在 `userData/brain/config.json`，从不发给渲染进程；`events.jsonl` 记录对话，`usage.json` 记当天 token，超过每日上限（默认 20 万）就不再调用模型。
 - 动作通过现有 `action` IPC 发给小鱼：点头、摇头、开心、眨眼、眨单眼、下躲、抖耳朵；睡着时只允许抖耳朵。
-- 微信（`src/brain/weixin.mjs`）：腾讯官方“微信 ClawBot”iLink Bot API（`https://ilinkai.weixin.qq.com`）。在气泡设置里点“连接微信”，用自己的微信扫码确认（二维码由 `src/qr.mjs` 生成，无第三方依赖，已与 npm `qrcode` 逐模块比对）。之后长轮询 `getupdates` 收消息，只认扫码的本人；回复按同样的分句和打字节奏经 `sendmessage` 发回，并带上最近一条消息的 `context_token`，期间用 `sendtyping` 显示“对方正在输入”。bot token 用 `safeStorage` 加密存在 `userData/brain/weixin.json`；会话过期（errcode -14）时清除凭证并在桌面提示重新扫码。微信来消息时桌面上的小鱼会抖一下耳朵，气泡不显示微信里的对话。
-- 设置在气泡的齿轮里：接口地址（默认 `https://api.deepseek.com`）、API Key、模型（可从 `/models` 获取列表，默认 `deepseek-v4-flash`）、人设、每日 token 上限。
+- 渠道互通但不串台：气泡里两个渠道的台词都显示，微信来的那句带「微信」标签（`main.cjs` 的 `say` 会把非桌面渠道一并推进气泡，`bubble:history` 回放最近 6 条不分渠道）；规划器上下文同样不分渠道，所以她在桌面上记得微信里聊过什么。一批消息跨渠道时，正在回答的那一轮不会被另一个渠道打断——先说完，另一个渠道随后单独回一轮（`brain.mjs` 按 `turnChannel` 判断）；跨渠道的历史行在提示词里标「（微信）」，她不会认错谁在哪说的。
+- 微信（`src/brain/weixin.mjs`）：腾讯官方“微信 ClawBot”iLink Bot API（`https://ilinkai.weixin.qq.com`）。在气泡设置里点“连接微信”，用自己的微信扫码确认（二维码由 `src/qr.mjs` 生成，无第三方依赖，已与 npm `qrcode` 逐模块比对）。之后长轮询 `getupdates` 收消息，只认扫码的本人；回复按同样的分句和打字节奏经 `sendmessage` 发回，并带上最近一条消息的 `context_token`，期间用 `sendtyping` 显示“对方正在输入”。bot token 用 `safeStorage` 加密存在 `userData/brain/weixin.json`；会话过期（errcode -14）时清除凭证并在桌面提示重新扫码。微信来消息时桌面上的小鱼会抖一下耳朵，她的回复同时出现在桌面气泡里（带「微信」标签）。
+- 设置在气泡的齿轮里：接口地址（默认 `https://api.deepseek.com`）、代理（可选，如 `http://127.0.0.1:7897`）、API Key、模型（可从 `/models` 获取列表，默认 `deepseek-flash`，服务端是 DeepSeek-V4.1-Flash；旧名 `deepseek-v4-flash` 仍可用但已退役）、人设、每日 token 上限。
+- 代理（`src/brain/proxy.mjs`）：Node 内置的 `fetch` 不读系统代理，所以填了代理时改用它自己实现的一套（`node:http`/`node:https` + `CONNECT` 隧道，含 `Proxy-Authorization`，无第三方依赖）。模型接口、`/models` 列表和微信接口都共用同一个 `fetchImpl`；改设置后立即生效，留空则直连。代理只影响这两条出网的路，不影响桌宠本体。
+- 网站登录（`desktop/sites.cjs`）：B站、小红书都走**扫码登录**——气泡设置里点“扫码登录”，主进程开一个普通窗口加载该站自己的登录页（二维码是原生大小，不截屏、不猜元素），你用手机扫完，登录态留在 `persist:<站点>` 分区里（`userData/Partitions/<站点>/`），重启应用也还在。判定成功的依据只是 cookie 出现（B站 `SESSDATA`、小红书 `web_session`），窗口随即自动关闭；点“退出登录”清空该分区。没有密码、没有自己保存的 token，过期了重新扫一次即可。桌宠窗口和它互不影响——这是唯一一个会出现在任务栏里的窗口。
+- 桌面工具（`desktop/tools.cjs` + `src/agent/desk.mjs`）：她有三个**只读**工具，都通过外部 CLI `agent-desktop` 执行（一次调用一个进程、25 秒硬超时、失败如实回话）：`screenshot` 截图（默认整屏，传 `app` 只截该窗口），存到 `图片\小鱼截图\shot-*.png` 并放进剪贴板；`look` 读当前窗口（或指定应用）的无障碍树，压成最多 40 个元素、1200 字的摘要再交给模型；`see` 真的**看懂屏幕**——截图缩到 1600 宽转 JPEG，按 OpenAI 格式 `image_url` + `data:` URL 交给 `deepseek-flash` 的视觉能力回答一个问题（实测 2 秒、约 1000 token）。`see` 的请求必须带 `thinking:{type:'disabled'}`：这个模型默认开启思维链，否则 `max_tokens` 会被 `reasoning_content` 吃光、`content` 返回空。读不到（画布、游戏、未开无障碍的界面）就说读不到，不猜坐标、不瞎点。`agent-desktop` 是外部依赖，不随应用打包，找不到时这几个工具直接回“这台电脑上现在没有这个能力”。
 
 ```powershell
 node test/chat-smoke.cjs
 ```
 
-此回归启动真实桌宠，加一个同时假扮 OpenAI 兼容模型和微信 iLink 接口的本地服务器：用合成鼠标事件验证单击打开输入框、双击和拖动不会打开、她点头并分两句回话、气泡位于呆毛上方；通过设置界面保存模型配置；点“连接微信”出现二维码、扫码确认后连上、只有主人的消息进入大脑、回复带着 `context_token` 发回微信并显示正在输入、凭证不以明文落盘。结果与截图在 `.test-output/chat/`。
+此回归启动真实桌宠，加一个同时假扮 OpenAI 兼容模型和微信 iLink 接口的本地服务器：用合成鼠标事件验证单击打开输入框、双击和拖动不会打开、她点头并分两句回话、气泡位于呆毛上方；通过设置界面保存模型配置；点“连接微信”出现二维码、扫码确认后连上、只有主人的消息进入大脑、回复带着 `context_token` 发回微信并显示正在输入、凭证不以明文落盘；微信的台词带着「微信」标签出现在桌面气泡里。网站登录用本地假登录页（`BLUEFISH_SITE_BASE`）走一遍：点“扫码登录”开窗、页面写 cookie、状态变“已登录”、再点“退出登录”清空。结果与截图在 `.test-output/chat/`。
 
 ## 4. 重新生成 README 素材
 

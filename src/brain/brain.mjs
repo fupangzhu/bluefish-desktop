@@ -13,10 +13,11 @@ export class Brain{
   // llm({role,messages,tools,signal,temperature,maxTokens}) -> {content,toolCalls,message}
   // store: {append(event)->event with seq, recent(n)->events}
   // out: {say(text,channel), act(action,channel), typing(on,channel), notice(text,channel), state(name)}
-  constructor({llm,store,out,persona=()=>'',clock=realClock,budget=null,debounce={},log=()=>{}}){
-    Object.assign(this,{llm,store,out,persona,clock,budget,log});
+  // tools: optional {screenshot({app})->{text}, look({app})->{text}} — desktop actions she may take
+  constructor({llm,store,out,persona=()=>'',clock=realClock,budget=null,debounce={},log=()=>{},tools=null}){
+    Object.assign(this,{llm,store,out,persona,clock,budget,log,tools});
     this.debounce=new Debounce(debounce);this.timer=null;this.running=false;
-    this.interrupt=false;this.plannerAbort=null;this.waitAbort=null;this.handledSeq=this.lastSeq();this.idle=null;
+    this.interrupt=false;this.plannerAbort=null;this.waitAbort=null;this.handledSeq=this.lastSeq();this.idle=null;this.turnChannel=null;
   }
   lastSeq(){const r=this.store.recent(1);return r.length?r[r.length-1].seq:0;}
   // A line from the owner arrived on some channel.
@@ -24,7 +25,9 @@ export class Brain{
     text=String(text??'').trim();if(!text)return null;
     const e=this.store.append({type:'heard',text:text.slice(0,2000),channel});
     this.channel=channel;
-    if(this.running){this.interrupt=true;this.plannerAbort?.abort();this.waitAbort?.abort();}
+    // Words from the same channel interrupt a turn in progress; another channel waits its turn, so
+    // the running reply stays where it was asked for and the new channel gets its own answer.
+    if(this.running&&channel===this.turnChannel){this.interrupt=true;this.plannerAbort?.abort();this.waitAbort?.abort();}
     this.schedule(this.debounce.push(this.clock.now()/1000));
     return e;
   }
@@ -36,7 +39,17 @@ export class Brain{
   }
   kick(){if(!this.running)this.idle=this.turn().finally(()=>{this.idle=null;});}
   // Resolves when the brain has nothing left to do (for tests and shutdown).
-  async settle(){for(let i=0;i<200;i++){if(this.idle)await this.idle;else if(this.timer||this.debounce.pending)await this.clock.sleep(20);else return;}}
+  // Resolves when the brain has nothing left to do (for tests and shutdown).
+  // A pending timer callback may already be queued, so idle is confirmed twice after a yield —
+  // otherwise a caller can observe "nothing to do" in the instant before the turn starts.
+  async settle(){
+    for(let i=0;i<400;i++){
+      if(this.idle){await this.idle;continue;}
+      if(this.timer||this.debounce.pending){await this.clock.sleep(20);continue;}
+      await this.clock.sleep(0);
+      if(!this.idle&&!this.timer&&!this.debounce.pending)return;
+    }
+  }
   stop(){if(this.timer)this.clock.clearTimeout(this.timer);this.timer=null;this.debounce.reset();this.plannerAbort?.abort();this.waitAbort?.abort();this.stopped=true;}
 
   context(startSeq){
@@ -54,7 +67,7 @@ export class Brain{
     if(this.lastHeardSeq()<=this.handledSeq)return;
     this.running=true;
     const startSeq=this.handledSeq;this.handledSeq=this.lastSeq();
-    const channel=this.channel||'desktop';
+    const channel=this.channel||'desktop';this.turnChannel=channel;
     const result={rounds:0,spoke:false,acted:[],ended:'done'};
     try{
       if(this.budget?.exhausted()){this.out.act('shakehead',channel);this.out.notice('今天聊得太多了，模型额度用完了，明天再聊吧。',channel);result.ended='budget';return result;}
@@ -78,6 +91,7 @@ export class Brain{
           else if(call.name==='act')out=this.doAct(call.args,channel,result);
           else if(call.name==='reply'){out=await this.doReply(call.args,channel,result);spokeNow=result.spoke;}
           else if(call.name==='wait'){out=await this.doWait(call.args);waited=true;}
+          else if(['screenshot','look','see'].includes(call.name))out=await this.doTool(call.name,call.args,channel,result);
           else out='没有这个工具';
           messages.push({role:'tool',tool_call_id:call.id,content:out});
         }
@@ -94,7 +108,7 @@ export class Brain{
       this.out.notice(e?.kind==='config'?result.error+'，请在设置里填好。':'出错了：'+result.error,channel,{settings:e?.kind==='config'||e?.kind==='auth'});
     }finally{
       this.out.typing(false,channel);this.out.state?.('idle',channel);
-      this.running=false;
+      this.running=false;this.turnChannel=null;
       // Messages that came in during the very end of the turn get their own turn.
       if(!this.stopped&&this.lastHeardSeq()>this.handledSeq&&!this.timer)this.schedule(this.clock.now()/1000);
     }
@@ -108,12 +122,29 @@ export class Brain{
     this.out.act(action,channel);this.store.append({type:'acted',action,channel});result.acted.push(action);
     return '做了：'+ACTIONS[action];
   }
+  // Desktop tools run in the main process (agent-desktop CLI). Failures are reported honestly so
+  // she can tell the owner instead of pretending it worked.
+  async doTool(name,args,channel,result){
+    const tool=this.tools?.[name];
+    if(!tool)return '这台电脑上现在没有这个能力';
+    const clean={};
+    if(args&&typeof args.app==='string'&&args.app.trim())clean.app=args.app.trim().slice(0,80);
+    if(args&&typeof args.question==='string'&&args.question.trim())clean.question=args.question.trim().slice(0,300);
+    try{
+      const r=await tool(clean);
+      this.store.append({type:'acted',action:name,channel});result.acted.push(name);
+      return String(r?.text||'').slice(0,2000)||'做完了，但没什么可说的';
+    }catch(e){
+      this.log('desk tool failed',name,e?.message);
+      return '没做成：'+(e?.message||e);
+    }
+  }
   async doReply(args,channel,result){
     if(result.spoke)return '这一轮已经说过话了';
     const reference=String(args?.reference||'').slice(0,400),tone=String(args?.tone||'').slice(0,40);
     const history=this.store.recent(BRAIN.historyEvents+10).filter(e=>['heard','said','acted'].includes(e.type)).slice(-BRAIN.historyEvents);
     this.out.typing(true,channel);
-    const res=await this.llm({role:'main',messages:[{role:'system',content:replyerSystem(this.persona())},{role:'user',content:replyerUser({now:this.clock.now(),history,reference,tone})}],temperature:.9,maxTokens:300});
+    const res=await this.llm({role:'main',messages:[{role:'system',content:replyerSystem(this.persona())},{role:'user',content:replyerUser({now:this.clock.now(),history,reference,tone})}],temperature:.9,maxTokens:300,thinking:{type:'disabled'}});
     const lines=splitReply(res.content);
     if(!lines.length){this.out.typing(false,channel);return '没想好说什么，什么都没说';}
     for(const [i,line] of lines.entries()){
