@@ -20,6 +20,8 @@ const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
 let win,menuWin,bubbleWin,brainHost,siteHost,server,timer,topTimer,drag=null,tray,saveTimer;
 const siteStatusLog=[];
 let bubbleHeight=120,bubbleMode=null,bubbleHideTimer=null,bubbleActiveAt=0;
+let dragAliveAt=0,clickThrough=null;
+const DRAG_ALIVE_MS=1500;
 // The smoke test drives synthetic input events, so it also stands in for the cursor they imply.
 let smokeCursor=null;
 const cursorPoint=()=>SMOKE&&smokeCursor?{...smokeCursor}:screen.getCursorScreenPoint();
@@ -58,6 +60,14 @@ app.whenReady().then(async()=>{
   const start=initialBounds();
   lastSet={...start};
   win=new BrowserWindow({...start,minWidth:start.width,minHeight:start.height,maxWidth:start.width,maxHeight:start.height,title:'蓝色肥鱼',icon:APP_ICON,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,resizable:false,maximizable:false,fullscreenable:false,skipTaskbar:true,show:false,webPreferences:{preload:path.join(__dirname,'preload.cjs'),backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});
+  // Only touch the native flag when it changes; start click-through so an unpainted window never
+  // blocks the desktop.
+  function setClickThrough(on){if(!alive(win)||clickThrough===on)return;clickThrough=on;win.setIgnoreMouseEvents(on);}
+  setClickThrough(true);
+  // A crashed or hung renderer must not leave an invisible window eating clicks.
+  win.webContents.on('render-process-gone',(_e,d)=>{console.error('pet renderer gone',d?.reason);drag=null;setClickThrough(true);if(!SMOKE)setTimeout(()=>{if(alive(win))win.webContents.reload();},500);});
+  win.on('unresponsive',()=>{drag=null;setClickThrough(true);});
+  win.webContents.on('did-start-loading',()=>{drag=null;setClickThrough(true);});
   win.on('show',()=>{if(alive(win))win.webContents.setBackgroundThrottling(false);});
   win.on('hide',()=>{if(alive(win))win.webContents.setBackgroundThrottling(true);});
 
@@ -236,10 +246,15 @@ app.whenReady().then(async()=>{
   // ---- IPC (every sender is validated) ------------------------------------------------
   const petOwned=e=>alive(win)&&e.sender===win.webContents;
   const ctlOwned=e=>alive(menuWin)&&e.sender===menuWin.webContents;
-  ipcMain.on('interactive',(e,hit)=>{if(!petOwned(e)||drag)return;win.setIgnoreMouseEvents(hit!==true,{forward:true});});
+  // No {forward:true}: on Windows it installs a system-wide low-level mouse hook in this process,
+  // so any stall here (a slow setBounds, a busy frame) would freeze the mouse for the whole
+  // desktop. The renderer already gets the cursor from the 33 ms poll below, so it is not needed.
+  ipcMain.on('interactive',(e,hit)=>{if(!petOwned(e)||drag)return;setClickThrough(hit!==true);});
+  // The renderer re-asserts a live drag every ~300 ms; see the watchdog in the pointer timer.
+  ipcMain.on('drag-alive',e=>{if(petOwned(e)&&drag)dragAliveAt=Date.now();});
   ipcMain.on('drag',(e,on)=>{
     if(!petOwned(e))return;
-    if(on===true){drag=createDrag(cursorPoint(),lastSet||win.getBounds(),{lockY:state.docked});win.setIgnoreMouseEvents(false);}
+    if(on===true){drag=createDrag(cursorPoint(),lastSet||win.getBounds(),{lockY:state.docked});dragAliveAt=Date.now();setClickThrough(false);}
     else endDrag();
   });
   // Ahoge tow: the renderer simulates the elastic follow and asks for a docked window x.
@@ -322,6 +337,9 @@ app.whenReady().then(async()=>{
   timer=setInterval(()=>{
     if(!alive(win))return;
     const p=cursorPoint();
+    // A drag the renderer stopped vouching for (lost release, reload, hang) ends here instead of
+    // gluing the window to the cursor; the window goes back to click-through until hovered again.
+    if(drag&&Date.now()-dragAliveAt>DRAG_ALIVE_MS){drag=null;setClickThrough(true);}
     if(drag)dragStep(p);
     const r=win.getContentBounds(),display=screen.getDisplayMatching(r),area=display.workArea;
     let track=null,wall={side:0,gap:0};
@@ -392,6 +410,56 @@ app.whenReady().then(async()=>{
         evidence.editorStatus=await win.webContents.executeJavaScript('fetch("/").then(r=>r.status)');
         evidence.menuAnimationButtons=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-action]").length');
         evidence.menuEditorEntries=await menuWin.webContents.executeJavaScript('document.querySelectorAll("[data-command=open-console]").length');
+        // Drag: every way of grabbing her should carry her, and a lost release must not glue her.
+        if(process.env.BLUEFISH_SMOKE_DRAG){
+          const dr=evidence.drag={};
+          applyPatch({size:240,docked:true});await sleep(600);
+          const js=s=>win.webContents.executeJavaScript(s);
+          const at=(x,y)=>{const r=win.getContentBounds();smokeCursor={x:r.x+Math.round(x),y:r.y+Math.round(y)};};
+          const input=(type,x,y,extra={})=>{at(x,y);win.webContents.sendInputEvent({type,x:Math.round(x),y:Math.round(y),globalX:smokeCursor.x,globalY:smokeCursor.y,...extra});};
+          // Window-relative points stay valid while the window follows the cursor, so move in
+          // screen space and translate each step back into the window's current frame.
+          const carry=async(x,y,dx,{release=true,steps=10}={})=>{
+            const r0=win.getContentBounds(),sx=r0.x+x,sy=r0.y+y;
+            input('mouseMove',x,y);await sleep(80);input('mouseDown',x,y,{button:'left',clickCount:1});await sleep(40);
+            dr.log=(dr.log||[]);dr.log.push({x,y,drag:!!drag,active:await js('(()=>{const a=window.bluefish.touchInput.active;return a&&{part:a.part,head:a.head};})()'),last:await js('window.bluefish.lastClick??null')});
+            for(let i=1;i<=steps;i++){const r=win.getContentBounds();input('mouseMove',sx+dx*i/steps-r.x,sy-r.y,{button:'left'});await sleep(50);}
+            await sleep(120);
+            if(release){const r=win.getContentBounds();input('mouseUp',sx+dx-r.x,sy-r.y,{button:'left',clickCount:1});await sleep(200);}
+          };
+          // A point well inside the wanted part (all neighbours agree), searched from the face
+          // outward so swaying edges like the ahoge tip are never picked.
+          const find=part=>js(`(()=>{const b=window.bluefish,P=b.position(),s=b.state.size,cx=P.left+s*.5,cy=P.top+s*.62,want=${JSON.stringify(part)};
+            const is=(x,y)=>b.hitTest(x,y)&&(b.partAt(x,y)||'body')===want;
+            for(let r=0;r<s;r+=4)for(let a=0;a<24;a++){const x=Math.round(cx+r*Math.cos(a/24*6.283)),y=Math.round(cy+r*Math.sin(a/24*6.283));
+              if([[0,0],[8,0],[-8,0],[0,8],[0,-8]].every(([dx,dy])=>is(x+dx,y+dy)))return {x,y};}
+            return null;})()`);
+          const home=()=>{resetPosition();return sleep(500);};
+          const trial=async(name,setup,point,dx=90)=>{
+            await home();if(setup)await js(setup);await sleep(300);
+            const p=await find(point);const before=win.getBounds().x;
+            await carry(p.x,p.y,dx);
+            dr[name]={point:p,moved:win.getBounds().x-before,dragLeft:!!drag,sleeping:await js('window.bluefish.motion.attention.current.sleeping')};
+          };
+          await trial('body',null,'body');
+          await trial('hair',null,'hair_front');
+          await trial('asleep','(()=>{const s=window.bluefish.motion.attention.sleepController;s.sleeping=true;s.depth=s.closure=1;})()','body');
+          await sleep(800);dr.asleep.afterRelease=await js('window.bluefish.motion.attention.current.sleeping');
+          await trial('bonked','window.bluefish.motion.touch.startBonk()','body');
+          // Watchdog: the renderer hangs mid-drag, so main stops hearing from it.
+          await home();
+          const p=await find('body');const r0=win.getContentBounds();
+          await carry(p.x,p.y,40,{release:false});
+          dr.hang={dragBefore:!!drag};
+          js('(()=>{const t=Date.now();while(Date.now()-t<2600){}})()').catch(()=>{});
+          await sleep(2000);
+          dr.hang.dragAfter=!!drag;dr.hang.clickThrough=clickThrough;
+          const x1=win.getBounds().x;
+          for(let i=1;i<=5;i++){const r=win.getContentBounds();input('mouseMove',r0.x+p.x+40+i*30-r.x,r0.y+p.y-r.y,{button:'left'});smokeCursor={x:r0.x+p.x+40+i*30,y:r0.y+p.y};await sleep(60);}
+          await sleep(200);dr.hang.followedAfterWatchdog=win.getBounds().x-x1;
+          await sleep(800);{const r=win.getContentBounds();input('mouseUp',smokeCursor.x-r.x,smokeCursor.y-r.y,{button:'left',clickCount:1});}
+          await sleep(300);smokeCursor=null;await home();
+        }
         // Chat: real input events on the pet, a fake OpenAI-compatible model behind the brain.
         if(process.env.BLUEFISH_SMOKE_CHAT){
           const chat=evidence.chat={};

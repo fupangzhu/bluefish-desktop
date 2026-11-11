@@ -117,6 +117,8 @@ export class Touch {
 }
 
 // A tap on an ear reacts on release; a deliberate drag still moves the pet.
+// How far a press on the fringe may travel before it turns into carrying the whole character.
+export const TOUCH_HANDOFF={hair:.12};
 export class TouchInput {
   constructor(touch,onDrag=()=>{}){this.touch=touch;this.onDrag=onDrag;this.active=null;}
   begin(part,point,size,grip=null,{head=false,tow=false}={}){
@@ -132,7 +134,12 @@ export class TouchInput {
     const active=this.active;if(!active)return;
     if(motionDistance(point,active.point)>Math.max(5,active.size*.025)){active.moved=true;this.touch.headTap=null;}
     if(active.part==='ahoge')this.touch.movePull(point,active.size);
-    else if(active.part==='hair_front')this.touch.fringe.move(point);
+    else if(active.part==='hair_front'){
+      // A small pull flicks the fringe (it saturates at ~6% of the head); pulling well past that
+      // means the owner wants to carry her, so the press becomes a window drag.
+      if(Math.hypot(point.x-active.point.x,point.y-active.point.y)>Math.max(16,active.size*TOUCH_HANDOFF.hair)){this.touch.fringe.end();this.touch.headTap=null;active.part='body';active.moved=true;this.onDrag(true);}
+      else this.touch.fringe.move(point);
+    }
     else if(active.part.startsWith('ear_')&&Math.hypot(point.x-active.point.x,point.y-active.point.y)>Math.max(5,active.size*.025)){
       active.part='body';this.onDrag(true);
     }

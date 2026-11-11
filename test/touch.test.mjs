@@ -97,3 +97,14 @@ test('a tug sustains the guarding pose; a bonk covers first, then ducks (never f
  s=advance(150);assert.ok(s.dip>DIP.depth*.4);assert.equal(s.guard,0);
  s=advance(300);assert.equal(s.dip,0);assert.equal(t.bonking,false);
 });
+
+test('pulling the fringe far turns the press into carrying her, a small pull only flicks it',async()=>{
+ const {TOUCH_HANDOFF}=await import('../src/touch.mjs');
+ const touch=new Touch(()=>.5),events=[],input=new TouchInput(touch,on=>events.push(on));
+ input.begin('hair_front',{x:100,y:100},240,{source:{x:1000,y:1000}});
+ input.move({x:125,y:96});assert.deepEqual(events,[],'a flick stays on the hair');assert.equal(touch.fringe.held,true);
+ input.move({x:100+240*TOUCH_HANDOFF.hair+4,y:100});
+ assert.deepEqual(events,[true],'past the hand-off distance the window drag starts');
+ assert.equal(touch.fringe.held,false);assert.equal(input.active.part,'body');
+ assert.equal(input.end(),false,'a carried press is never a head tap');assert.deepEqual(events,[true,false]);
+});

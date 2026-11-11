@@ -36,10 +36,13 @@ let L={W:0,H:0,s:0,docked:true,grip:0,ledgeY:0,dpr:1};   // layout
 let pos={left:0,top:0};                                    // current head canvas position (window px)
 let skin=makeSkin();
 let pointer=null,pointerAt=-1e9,pokeFlag=false,wakeFlag=false,paused=false,lastHit=null,renderer=null,rig=null;
+// A window drag is live in the main process; re-assert it so a lost release can never leave the
+// window glued to the cursor (main drops a drag that stops hearing from us).
+let dragOn=false,dragAliveAt=0,sleepPress=false;
 let lastPose={yaw:0,pitch:0,roll:0},lastMainFollow;
 let activePointer=null;
 let track=null,wall={side:0,gap:0},towOrigin=null,towSent=null;   // docked window range / nearby screen edge from main
-const touchInput=new TouchInput(motion.touch,on=>pet?.drag(on));
+const touchInput=new TouchInput(motion.touch,on=>{dragOn=on===true;dragAliveAt=performance.now();pet?.drag(on);});
 // Head shift toward the wall while slumping: close the gap and press a little further, so the
 // squashed wall-side ear stays flat against the screen edge.
 const slumpShift=()=>clamp(wall.gap+.06*L.s,0,.5*L.s);
@@ -120,6 +123,7 @@ function applyState(next){
 
 // ---- input ------------------------------------------------------------------------------------------
 function setPointer(p){pointer=p;pointerAt=performance.now();bluefish.pointer=p;if(p){
+  const key=p.x+','+p.y;if(key!==lastPointerKey){lastPointerKey=key;if(pointerNear(p))markActive();}
   track=p.win||null;wall=p.wall&&L.docked?{side:Math.sign(p.wall.side)||0,gap:+p.wall.gap||0}:{side:0,gap:0};motion.wall=wall;
   if(track&&towOrigin!==null)motion.touch.tow.setLimits(track.min-towOrigin,track.max-towOrigin);touchInput.move(p);const hover=renderer?.pickHit(p.x-pos.left+VIEW_PAD*L.s,p.y-pos.top+VIEW_PAD*L.s);touchInput.hover(hover?.part,p,L.s,hover);motion.setGaze(p.gx,p.gy);const hit=!!touchInput.active||hitTest(p.x,p.y);if(hit!==lastHit){lastHit=hit;bluefish.isInteractive=hit;pet?.setInteractive(hit);}}}
 const eventPoint=e=>({x:e.clientX,y:e.clientY,sx:e.screenX,sy:e.screenY});
@@ -144,11 +148,13 @@ function onDown(e){
   // Any second press inside the confirm window means this was not a single click.
   const second=!!chatTimer;
   if(chatTimer){clearTimeout(chatTimer);chatTimer=0;}
-  if(e.button!==0||activePointer!==null||motion.touch.bonking||!hitTest(e.clientX,e.clientY))return;
+  // A bonk no longer swallows presses: the hands are on her head, but she can still be carried.
+  if(e.button!==0||activePointer!==null||!hitTest(e.clientX,e.clientY))return;
   down={x:e.clientX,y:e.clientY,at:performance.now(),blocked:second||busyForChat()};
   activePointer=e.pointerId;
   try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
-  if(motion.attention.current.sleeping){motion.touch.headTap=null;wakeFlag=true;pokeFlag=true;lastHit=true;pet?.setInteractive(true);return;}
+  // Asleep: a press can still carry her; the release (moved or not) wakes her up.
+  if(motion.attention.current.sleeping){motion.touch.headTap=null;sleepPress=true;pokeFlag=true;touchInput.begin(null,eventPoint(e),L.s);lastHit=true;pet?.setInteractive(true);return;}
   const part=partAt(e.clientX,e.clientY);
   const grip=part==='ahoge'||part==='hair_front'?renderer.pickHit(e.clientX-pos.left+VIEW_PAD*L.s,e.clientY-pos.top+VIEW_PAD*L.s):null;
   const head=!handsAlpha(e.clientX,e.clientY)&&(part==='hair_front'||(!part&&headContact(e.clientX-pos.left,e.clientY-pos.top,L.s)));
@@ -170,6 +176,7 @@ function endDrag(e){
   const click=activePointer!==null&&clickEnded(e);
   const bonked=touchInput.end(e?.type!=='pointerup');
   if(click&&!bonked&&!motion.touch.bonking)armChat();
+  if(sleepPress){sleepPress=false;wakeFlag=true;}
   if(moved)motion.slump.arrive();activePointer=null;lastHit=null;
   document.documentElement.style.cursor='';
 }
@@ -182,12 +189,21 @@ for(const el of [canvas,handsCanvas]){
 addEventListener('pointermove',e=>{if(e.pointerId===activePointer)touchInput.move(eventPoint(e));});
 addEventListener('pointerup',endDrag);
 addEventListener('blur',()=>{endDrag();touchInput.hover(null,null,L.s);});
-addEventListener('wheel',e=>{pokeFlag=true;if(e.ctrlKey){e.preventDefault();pet?.zoom(-Math.sign(e.deltaY));}},{passive:false});
+addEventListener('wheel',e=>{pokeFlag=true;markActive();if(e.ctrlKey){e.preventDefault();pet?.zoom(-Math.sign(e.deltaY));}},{passive:false});
 addEventListener('resize',()=>layout());
 
 // ---- main loop ---------------------------------------------------------------------------------------
-let last=performance.now();
+// Frame pacing. Rendering projects every mesh vertex on the CPU, so an uncapped loop on a 120/144 Hz
+// screen kept a whole core busy (and the GPU process with it) while she was just sitting there.
+// Interaction gets 60 fps; when nothing is happening near her, 30 fps is plenty for idle motion.
+export const FRAME={activeFps:60,idleFps:30,activeFor:2500};
+let last=performance.now(),activeUntil=0,lastPointerKey='';
+const markActive=()=>{activeUntil=performance.now()+FRAME.activeFor;};
+function pointerNear(p){return p&&p.x>-L.s*.5&&p.y>-L.s*.5&&p.x<L.W+L.s*.5&&p.y<L.H+L.s*.5;}
 function frame(now){
+  const busy=now<activeUntil||!!touchInput.active||dragOn||towOrigin!==null||motion.touch.bonking||motion.touch.dip.active;
+  // Skip this vsync if the last step was too recent (1 ms slack for timer jitter).
+  if(now-last<1000/(busy?FRAME.activeFps:FRAME.idleFps)-1){requestAnimationFrame(frame);return;}
   const dt=Math.min(0.1,Math.max(0,(now-last)/1000));last=now;
   if(handsCanvas.width!==Math.round(innerWidth*Math.min(devicePixelRatio||1,2))||L.H!==innerHeight)layout();
   if(!paused&&renderer){
@@ -203,6 +219,7 @@ function frame(now){
     pokeFlag=false;wakeFlag=false;
     motion.override=follow?out.override:null;
     if(out.gesture&&!attention.rubbing&&!attention.sleeping&&!attention.woke&&!motion.wake.active&&!motion.touch.bonking&&!attention.reluctant?.active)motion.gesture(out.gesture);
+    if(dragOn&&now-dragAliveAt>300){dragAliveAt=now;pet?.dragAlive?.();}
     const cur=motion.step(dt);
     if(cur.towEnd&&cur.towEnd.traveled>0)motion.slump.arrive(motion.touch.dip.remaining);
     const tow=motion.touch.tow;
@@ -230,6 +247,7 @@ try{
   if(pet){
     pet.onPointer(setPointer);
     pet.onAction(name=>{
+      markActive();
       if(name==='reset'){pokeFlag=true;endDrag();motion.reset();return;}
       // Gestures chosen by the chat brain: an ear flick is fine even asleep, the rest need her awake.
       if(name==='ear'){motion.touch.twitch(Math.random()<.5?'l':'r');return;}

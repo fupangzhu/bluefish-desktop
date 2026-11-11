@@ -130,9 +130,13 @@ export class Renderer{
     if(name==='hair_back'){const tip=Math.max(0,(py/h-.48)/.5);x+=lag*.0009*tip+(s.secondary?Math.sin(t*1.6+x*4)*.0025*tip:0);}
     if(name==='hair_front'){const tip=Math.max(0,(py/h-.42)/.5);x+=lag*.0002*tip;}
     const bulge=.075*Math.exp(-((x/.38)**2+((y-.1)/.4)**2));
-    const z=layer.depth+bulge,yaw=rad(s.yaw),pitch=rad(s.pitch),roll=rad(s.roll);
-    const xx=x*Math.cos(yaw)+z*Math.sin(yaw),zz=-x*Math.sin(yaw)+z*Math.cos(yaw);
-    const yy=y*Math.cos(pitch)-zz*Math.sin(pitch),rx=xx*Math.cos(roll)-yy*Math.sin(roll),ry=xx*Math.sin(roll)+yy*Math.cos(roll);
+    // The head rotation is the same for every vertex of a frame: compute its sines once (same
+    // values, so the image is unchanged; this was a large share of the per-frame CPU cost).
+    let k=this.trig;
+    if(!k||k.yaw!==s.yaw||k.pitch!==s.pitch||k.roll!==s.roll){const a=rad(s.yaw),b=rad(s.pitch),c=rad(s.roll);k=this.trig={yaw:s.yaw,pitch:s.pitch,roll:s.roll,cy:Math.cos(a),sy:Math.sin(a),cp:Math.cos(b),sp:Math.sin(b),cr:Math.cos(c),sr:Math.sin(c)};}
+    const z=layer.depth+bulge;
+    const xx=x*k.cy+z*k.sy,zz=-x*k.sy+z*k.cy;
+    const yy=y*k.cp-zz*k.sp,rx=xx*k.cr-yy*k.sr,ry=xx*k.sr+yy*k.cr;
     return [rx*1.76+2*(s.shiftX||0),-(ry+(s.breath||0))*1.76-2*(s.shiftY||0)];
   }
   draw(layer,s,opacity=1,eyeOpen=-1){
